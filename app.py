@@ -45,19 +45,15 @@ devices = {
 # =========================================================
 
 def get_battery():
-    paths = [
-        "/sys/class/power_supply/battery/capacity",
-        "/sys/class/power_supply/BAT0/capacity"
-    ]
+    try:
+        output = os.popen("termux-battery-status").read()
 
-    for path in paths:
-        try:
-            with open(path, "r") as f:
-                return int(f.read().strip())
-        except:
-            pass
+        data = json.loads(output)
 
-    return None
+        return data.get("percentage")
+
+    except:
+        return None
 
 
 def get_local_ip():
