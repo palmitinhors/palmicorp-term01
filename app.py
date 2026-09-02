@@ -1,4 +1,4 @@
-from http.server import HTTPServer, BaseHTTPRequestHandler
+from http.server import ThreadingHTTPServer, BaseHTTPRequestHandler
 from datetime import datetime
 
 PORT = 8080
@@ -111,7 +111,7 @@ class Handler(BaseHTTPRequestHandler):
         self.wfile.write(PAGE.encode("utf-8"))
 
 
-server = HTTPServer(("0.0.0.0", PORT), Handler)
+server = ThreadingHTTPServer(("0.0.0.0", PORT), Handler)
 
 print("--------------------------------")
 print("       PALMICORP SYSTEM")
