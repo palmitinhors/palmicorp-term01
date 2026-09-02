@@ -1161,9 +1161,9 @@ class Handler(BaseHTTPRequestHandler):
                 return
 
 
-devices[name]["last_seen"] = time.time()
+            devices[name]["last_seen"] = time.time()
 
-devices[name]["status"] = "ONLINE"
+            devices[name]["status"] = "ONLINE"
 
 
             self.send_json(
