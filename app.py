@@ -17,7 +17,7 @@ DEVICE_MODEL = "SAMSUNG GALAXY A02"
 
 # Quando quiser conectar o MegaVault real,
 # coloque o endereço dele aqui.
-MEGAVAULT_URL = ""
+MEGAVAULT_URL = "https://megavault-privado.bonny-eagle-2456.chatgpt.site"
 
 # Quantos segundos sem heartbeat para considerar offline.
 HEARTBEAT_TIMEOUT = 30
