@@ -17,7 +17,7 @@ DEVICE_MODEL = "SAMSUNG GALAXY A02"
 
 # Quando quiser conectar o MegaVault real,
 # coloque o endereço dele aqui.
-MEGAVAULT_URL = "https://megavault-privado.bonny-eagle-2456.chatgpt.site"
+MEGAVAULT_URL = "http://127.0.0.1:5173"
 
 # Quantos segundos sem heartbeat para considerar offline.
 HEARTBEAT_TIMEOUT = 30
@@ -476,6 +476,187 @@ footer {
 }
 
 
+
+/* =========================================================
+   PALMICORP // ADVANCED TERMINAL THEME
+   ========================================================= */
+
+:root {
+    --terminal-green: #77ff9d;
+    --terminal-cyan: #65e8ff;
+    --terminal-dim: #7f8b98;
+    --terminal-line: rgba(119, 255, 157, 0.16);
+}
+
+body::before {
+    content: "";
+    position: fixed;
+    inset: 0;
+    pointer-events: none;
+    background:
+        linear-gradient(rgba(255,255,255,0.018) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(255,255,255,0.012) 1px, transparent 1px);
+    background-size: 32px 32px;
+    mask-image: linear-gradient(to bottom, rgba(0,0,0,.85), transparent 90%);
+    z-index: -1;
+}
+
+body::after {
+    content: "";
+    position: fixed;
+    inset: 0;
+    pointer-events: none;
+    background: repeating-linear-gradient(
+        to bottom,
+        rgba(255,255,255,0.018) 0px,
+        rgba(255,255,255,0.018) 1px,
+        transparent 2px,
+        transparent 4px
+    );
+    opacity: .22;
+    z-index: 9998;
+}
+
+.hero-terminal {
+    position: relative;
+    margin: 20px 0;
+    padding: 28px 20px 24px;
+    border: 1px solid rgba(101, 232, 255, .28);
+    border-radius: 16px;
+    background:
+        radial-gradient(circle at 50% 15%, rgba(101,232,255,.10), transparent 45%),
+        rgba(6, 10, 14, .92);
+    overflow: hidden;
+    box-shadow:
+        0 0 40px rgba(101,232,255,.05),
+        inset 0 0 60px rgba(119,255,157,.025);
+}
+
+.hero-terminal::before {
+    content: "PALMICORP // BRASILIA TIME CORE";
+    position: absolute;
+    top: 10px;
+    left: 14px;
+    font-size: 9px;
+    letter-spacing: 2px;
+    color: #64717f;
+}
+
+.hero-clock {
+    text-align: center;
+    font-size: clamp(54px, 10vw, 104px);
+    line-height: .95;
+    letter-spacing: 4px;
+    font-weight: 700;
+    color: #f8fbff;
+    text-shadow:
+        0 0 10px rgba(101,232,255,.28),
+        0 0 35px rgba(119,255,157,.12);
+    margin-top: 15px;
+}
+
+.hero-date {
+    margin-top: 14px;
+    text-align: center;
+    color: var(--terminal-green);
+    font-size: 13px;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+}
+
+.hero-zone {
+    margin-top: 7px;
+    text-align: center;
+    color: #697786;
+    font-size: 10px;
+    letter-spacing: 2px;
+}
+
+.terminal-strip {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 8px;
+    margin-top: 22px;
+}
+
+.terminal-strip > div {
+    border-top: 1px solid rgba(119,255,157,.15);
+    padding-top: 9px;
+    text-align: center;
+    font-size: 9px;
+    letter-spacing: 1.5px;
+    color: #667381;
+}
+
+.terminal-strip strong {
+    display: block;
+    color: #b9c4cf;
+    font-size: 11px;
+    margin-top: 4px;
+    font-weight: normal;
+}
+
+.qr-card {
+    display: grid;
+    grid-template-columns: 150px 1fr;
+    gap: 20px;
+    align-items: center;
+}
+
+.qr-wrap {
+    width: 150px;
+    height: 150px;
+    padding: 8px;
+    background: #fff;
+    border-radius: 10px;
+}
+
+.qr-wrap img {
+    width: 100%;
+    height: 100%;
+    display: block;
+}
+
+.qr-url {
+    word-break: break-all;
+    color: var(--terminal-cyan);
+    font-size: 12px;
+    margin-top: 9px;
+}
+
+.qr-help {
+    color: #8794a5;
+    font-size: 12px;
+    line-height: 1.6;
+}
+
+.service-dot {
+    display: inline-block;
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: var(--terminal-green);
+    box-shadow: 0 0 10px rgba(119,255,157,.7);
+    margin-right: 7px;
+}
+
+@media(max-width: 600px) {
+    .qr-card {
+        grid-template-columns: 1fr;
+        justify-items: center;
+        text-align: center;
+    }
+
+    .terminal-strip {
+        grid-template-columns: 1fr;
+    }
+
+    .hero-terminal {
+        padding-left: 12px;
+        padding-right: 12px;
+    }
+}
+
 @media(max-width: 600px) {
 
     .brand {
@@ -544,6 +725,19 @@ footer {
     </div>
 
 </header>
+
+
+<div class="hero-terminal">
+    <div class="hero-clock" id="brasiliaClock">--:--:--</div>
+    <div class="hero-date" id="brasiliaDate">CARREGANDO DATA...</div>
+    <div class="hero-zone">AMERICA/SAO_PAULO // UTC-03</div>
+
+    <div class="terminal-strip">
+        <div>NODE<strong>PALM-TERM-01</strong></div>
+        <div>CORE STATUS<strong><span class="service-dot"></span>ONLINE</strong></div>
+        <div>NETWORK MODE<strong>LOCAL SERVER</strong></div>
+    </div>
+</div>
 
 
 <div class="grid">
@@ -721,6 +915,38 @@ footer {
 </div>
 
 
+<div class="section card">
+
+    <div class="card-title">
+        QUICK ACCESS QR
+    </div>
+
+    <div class="qr-card">
+
+        <div class="qr-wrap">
+            <img id="palmicorpQr" alt="QR Code PALMICORP">
+        </div>
+
+        <div>
+            <div class="big">
+                SCAN TO OPEN
+            </div>
+
+            <div class="qr-help">
+                Escaneie com outro aparelho conectado à mesma rede Wi-Fi
+                para abrir este terminal PALMICORP.
+            </div>
+
+            <div class="qr-url" id="palmicorpQrUrl">
+                --
+            </div>
+        </div>
+
+    </div>
+
+</div>
+
+
 <div class="section">
 
     <div class="buttons">
@@ -731,6 +957,10 @@ footer {
 
         <button onclick="location.reload()">
             RELOAD TERMINAL
+        </button>
+
+        <button onclick="openMegaVault()">
+            OPEN MEGAVAULT
         </button>
 
     </div>
@@ -751,6 +981,71 @@ VERSION 1.0
 
 
 <script>
+
+
+function openMegaVault() {
+
+    const url =
+        window.location.protocol +
+        "//" +
+        window.location.hostname +
+        ":5173";
+
+    window.open(
+        url,
+        "_blank",
+        "noopener"
+    );
+
+}
+
+
+function updateBrasiliaClock() {
+
+    const now = new Date();
+
+    document.getElementById("brasiliaClock").textContent =
+        new Intl.DateTimeFormat(
+            "pt-BR",
+            {
+                timeZone: "America/Sao_Paulo",
+                hour: "2-digit",
+                minute: "2-digit",
+                second: "2-digit",
+                hour12: false
+            }
+        ).format(now);
+
+    document.getElementById("brasiliaDate").textContent =
+        new Intl.DateTimeFormat(
+            "pt-BR",
+            {
+                timeZone: "America/Sao_Paulo",
+                weekday: "long",
+                day: "2-digit",
+                month: "long",
+                year: "numeric"
+            }
+        ).format(now);
+
+}
+
+
+function setupPalmicorpQr() {
+
+    const url =
+        window.location.protocol +
+        "//" +
+        window.location.hostname +
+        ":8080";
+
+    document.getElementById("palmicorpQrUrl").textContent = url;
+
+    document.getElementById("palmicorpQr").src =
+        "https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=" +
+        encodeURIComponent(url);
+
+}
 
 
 function updateClock() {
@@ -979,6 +1274,16 @@ function bootSequence() {
         }, 450);
 
 }
+
+
+updateBrasiliaClock();
+
+setInterval(
+    updateBrasiliaClock,
+    1000
+);
+
+setupPalmicorpQr();
 
 
 updateClock();
