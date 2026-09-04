@@ -49,6 +49,8 @@ def default_personal_state():
         "ecommerce_days": 0,
         "ecommerce_last_day": None,
         "ecommerce_log": [],
+        "notes": [],
+        "tasks": [],
     }
 
 
@@ -1021,6 +1023,128 @@ footer {
     background: rgba(255,189,89,.035);
 }
 
+
+
+/* =========================================================
+   PALMICORP v2.2 // NOTES + TASKS + ALERTS + WORLD CLOCK
+   ========================================================= */
+
+.form-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+    gap: 10px;
+    margin: 10px 0;
+}
+
+.palm-input, .palm-select {
+    width: 100%;
+    padding: 11px 12px;
+    border-radius: 10px;
+    border: 1px solid #303945;
+    background: #070a0e;
+    color: #e8eef5;
+    font-family: inherit;
+}
+
+.palm-label {
+    display: grid;
+    gap: 6px;
+    color: #7f8b98;
+    font-size: 10px;
+    letter-spacing: 1px;
+}
+
+.notes-hero, .planner-hero {
+    position: relative;
+    overflow: hidden;
+    min-height: 190px;
+    display: flex;
+    align-items: flex-end;
+    padding: 26px;
+    border-radius: 18px;
+    border: 1px solid rgba(101,232,255,.24);
+    background: radial-gradient(circle at 80% 20%, rgba(101,232,255,.14), transparent 32%), #071016;
+}
+
+.notes-hero::after { content: "NOTES"; }
+.planner-hero::after { content: "PLAN"; }
+.notes-hero::after, .planner-hero::after {
+    position:absolute; right:-10px; top:-15px; font-size:clamp(70px,15vw,145px); font-weight:900;
+    color:rgba(255,255,255,.025); letter-spacing:-7px; pointer-events:none;
+}
+
+.note-grid {
+    display:grid;
+    grid-template-columns: repeat(auto-fill, minmax(240px,1fr));
+    gap:12px;
+    margin-top:14px;
+}
+.note-card {
+    border:1px solid #29333e; border-radius:13px; padding:14px; background:#090d12; min-height:135px;
+}
+.note-card.pinned { border-color:rgba(255,189,89,.46); box-shadow: inset 0 0 25px rgba(255,189,89,.03); }
+.note-meta { color:#6f7d8b; font-size:9px; letter-spacing:1px; margin-bottom:8px; }
+.note-title { color:#edf3f8; font-size:14px; font-weight:700; margin-bottom:8px; }
+.note-body { color:#aeb8c3; font-size:11px; line-height:1.55; white-space:pre-wrap; }
+.note-actions { display:flex; gap:7px; margin-top:12px; }
+.note-actions button { width:auto; padding:7px 9px; font-size:9px; }
+
+.task-list { display:grid; gap:9px; margin-top:12px; }
+.task-item {
+    display:grid; grid-template-columns:auto 1fr auto; gap:11px; align-items:center; padding:12px;
+    border:1px solid #26313c; border-radius:11px; background:#090d12;
+}
+.task-item.done { opacity:.58; }
+.task-item.done .task-title { text-decoration:line-through; }
+.task-check { width:20px; height:20px; accent-color:#65e8ff; cursor:pointer; }
+.task-title { color:#e9eff5; font-size:12px; }
+.task-meta { color:#73808e; font-size:9px; margin-top:4px; }
+.task-item.overdue { border-color:rgba(255,104,104,.42); }
+.task-item.today { border-color:rgba(255,189,89,.42); }
+.task-delete { width:auto; padding:7px 9px; font-size:9px; }
+
+.calendar-shell {
+    border:1px solid #27323d; border-radius:14px; padding:14px; background:#080c11; margin-top:14px;
+}
+.calendar-head { display:flex; justify-content:space-between; align-items:center; gap:8px; margin-bottom:10px; }
+.calendar-head button { width:auto; padding:7px 10px; }
+.calendar-title { font-size:13px; letter-spacing:1.4px; color:#dce5ed; }
+.calendar-grid { display:grid; grid-template-columns:repeat(7,1fr); gap:5px; }
+.calendar-cell {
+    min-height:64px; border:1px solid #1f2933; border-radius:8px; padding:6px; color:#8090a0; font-size:10px; background:#070a0e;
+}
+.calendar-cell.head { min-height:auto; border:0; background:transparent; text-align:center; color:#657382; }
+.calendar-cell.today { border-color:#65e8ff; color:#d9f8ff; }
+.calendar-cell.has-task::after { content:"•"; display:block; color:#ffbd59; font-size:20px; line-height:12px; }
+.calendar-cell.muted { opacity:.25; }
+
+.alert-list { display:grid; gap:9px; margin-top:12px; }
+.alert-item { padding:12px 13px; border-radius:10px; border:1px solid #28333e; background:#090d12; }
+.alert-item.warn { border-color:rgba(255,189,89,.42); }
+.alert-item.danger { border-color:rgba(255,104,104,.48); }
+.alert-item.ok { border-color:rgba(82,255,131,.28); }
+.alert-title { font-size:11px; color:#e8eef5; }
+.alert-text { margin-top:4px; color:#7d8996; font-size:10px; line-height:1.45; }
+
+.world-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); gap:10px; margin-top:12px; }
+.world-clock { border:1px solid #27323c; border-radius:11px; padding:13px; background:#080c11; }
+.world-city { color:#7f8c99; font-size:9px; letter-spacing:1.5px; }
+.world-time { color:#f0f5f9; font-size:22px; margin-top:6px; }
+.world-date { color:#61707f; font-size:9px; margin-top:3px; }
+
+.ecom-fields { display:grid; grid-template-columns:repeat(auto-fit,minmax(170px,1fr)); gap:9px; margin:10px 0; }
+.ecom-mini { min-height:72px; }
+.ecom-filterbar { display:grid; grid-template-columns:1fr minmax(160px,220px); gap:9px; margin-bottom:10px; }
+.ecom-entry-title { color:#ffd18a; font-size:11px; margin-bottom:4px; }
+.ecom-entry-meta { color:#7d756a; font-size:9px; margin-bottom:7px; }
+.ecom-entry-section { color:#aeb8c3; font-size:10px; line-height:1.5; margin-top:5px; white-space:pre-wrap; }
+
+@media(max-width:600px) {
+    .ecom-filterbar { grid-template-columns:1fr; }
+    .task-item { grid-template-columns:auto 1fr; }
+    .task-delete { grid-column:2; justify-self:start; }
+}
+
 @media(max-width: 600px) {
     .viewer-modal { padding: 6px; }
     .viewer-shell { height: 96vh; border-radius: 12px; }
@@ -1623,37 +1747,98 @@ body::after {
         <div>
             <div class="ecom-kicker">PALMICORP // COMMERCE LEARNING LAB</div>
             <div class="ecom-title">E-COMMERCE <span>LAB</span></div>
-            <div class="ecom-sub">LEARN // DOCUMENT // TEST // IMPROVE</div>
+            <div class="ecom-sub">LEARN // DOCUMENT // APPLY // TEST // SCALE</div>
         </div>
     </div>
 
     <div class="stat-grid">
         <div class="stat-box ecom-card"><div class="card-title">DAYS LEARNING</div><div class="stat-value" id="ecommerceDays">0</div></div>
         <div class="stat-box ecom-card"><div class="card-title">LESSONS ARCHIVED</div><div class="stat-value" id="ecommerceLessonCount">0</div></div>
+        <div class="stat-box ecom-card"><div class="card-title">TOPICS TOUCHED</div><div class="stat-value" id="ecommerceTopicCount">0</div></div>
         <div class="stat-box ecom-card"><div class="card-title">MODE</div><div class="stat-value" style="font-size:18px;color:#ffbd59">BUILD & LEARN</div></div>
     </div>
 
     <div class="section studio-grid">
         <div class="studio-card ecom-card">
             <h3>COURSE LEARNING LOG</h3>
-            <p>Registre o que você aprendeu na aula de hoje. Organize por tema para encontrar depois.</p>
-            <select id="ecommerceCategory" class="ecom-select">
-                <option value="Produto">Produto</option>
-                <option value="Oferta">Oferta</option>
-                <option value="Loja">Loja</option>
-                <option value="Criativos">Criativos</option>
-                <option value="Tráfego">Tráfego</option>
-                <option value="Métricas">Métricas</option>
-                <option value="Operação">Operação</option>
-                <option value="Outro">Outro</option>
-            </select>
-            <textarea id="ecommerceNote" class="studio-textarea" placeholder="Ex.: hoje aprendi como estruturar uma página de produto e quais métricas acompanhar..."></textarea>
+            <p>Transforma cada aula em um registro útil: tema, conceito, aplicação, dúvida e próximo teste.</p>
+
+            <div class="ecom-fields">
+                <label class="palm-label">ÁREA
+                    <select id="ecommerceCategory" class="palm-select">
+                        <option>Fundamentos</option>
+                        <option>Nicho / Público</option>
+                        <option>Pesquisa de Produto</option>
+                        <option>Produto</option>
+                        <option>Oferta</option>
+                        <option>Precificação / Margem</option>
+                        <option>Branding</option>
+                        <option>Loja / UX</option>
+                        <option>Página de Produto</option>
+                        <option>Copywriting</option>
+                        <option>Criativos</option>
+                        <option>Conteúdo Orgânico</option>
+                        <option>Tráfego Pago</option>
+                        <option>Meta Ads</option>
+                        <option>Google Ads</option>
+                        <option>TikTok Ads</option>
+                        <option>SEO</option>
+                        <option>E-mail Marketing</option>
+                        <option>WhatsApp / CRM</option>
+                        <option>Funil / CRO</option>
+                        <option>Checkout</option>
+                        <option>Upsell / Cross-sell</option>
+                        <option>Métricas / Analytics</option>
+                        <option>Financeiro / Fluxo de Caixa</option>
+                        <option>Operação / Logística</option>
+                        <option>Fornecedores / Estoque</option>
+                        <option>Atendimento / Pós-venda</option>
+                        <option>Marketplace</option>
+                        <option>Automação / Ferramentas</option>
+                        <option>Jurídico / Fiscal</option>
+                        <option>Testes / Experimentos</option>
+                        <option>Ideias / Insights</option>
+                        <option>Outro</option>
+                    </select>
+                </label>
+                <label class="palm-label">MÓDULO / AULA
+                    <input id="ecommerceLesson" class="palm-input" maxlength="120" placeholder="Ex.: Módulo 3 — Aula 5">
+                </label>
+                <label class="palm-label">NÍVEL
+                    <select id="ecommerceLevel" class="palm-select">
+                        <option>Aprendendo</option>
+                        <option>Entendi</option>
+                        <option>Preciso revisar</option>
+                        <option>Quero testar</option>
+                        <option>Dominei</option>
+                    </select>
+                </label>
+            </div>
+
+            <label class="palm-label">O QUE EU APRENDI
+                <textarea id="ecommerceNote" class="studio-textarea" placeholder="Escreve o conceito principal da aula..."></textarea>
+            </label>
+            <label class="palm-label">COMO POSSO APLICAR
+                <textarea id="ecommerceApply" class="studio-textarea ecom-mini" placeholder="Ex.: aplicar isso na página de produto, oferta, criativo..."></textarea>
+            </label>
+            <label class="palm-label">DÚVIDA / PONTO PRA REVISAR
+                <textarea id="ecommerceQuestion" class="studio-textarea ecom-mini" placeholder="Alguma coisa ficou confusa? Anota aqui."></textarea>
+            </label>
+            <label class="palm-label">PRÓXIMA AÇÃO / TESTE
+                <textarea id="ecommerceAction" class="studio-textarea ecom-mini" placeholder="Ex.: montar uma oferta exemplo e comparar 3 preços."></textarea>
+            </label>
             <button class="ecom-save" onclick="saveEcommerceNote()">ARQUIVAR APRENDIZADO</button>
         </div>
 
         <div class="studio-card ecom-card">
             <h3>LEARNING ARCHIVE</h3>
-            <p>Seu histórico de estudo do curso, em ordem do mais recente.</p>
+            <p>Pesquise suas próprias anotações do curso por palavra ou área.</p>
+            <div class="ecom-filterbar">
+                <input id="ecommerceSearch" class="palm-input" placeholder="Buscar no arquivo..." oninput="renderEcommerceLog()">
+                <select id="ecommerceFilter" class="palm-select" onchange="renderEcommerceLog()">
+                    <option value="">Todas as áreas</option>
+                </select>
+            </div>
             <div class="log-list ecom-log" id="ecommerceLog"></div>
         </div>
     </div>
@@ -1665,15 +1850,94 @@ body::after {
 </div>
 
 <div id="module-notes" class="module-page">
-    <div class="module-placeholder"><strong>NOTES</strong><span>Notas pessoais, fixadas e privadas — módulo preparado para a próxima etapa.</span></div>
+    <div class="notes-hero">
+        <div>
+            <div class="nyvik-kicker" style="color:#65e8ff">PALMICORP // PERSONAL KNOWLEDGE</div>
+            <div class="nyvik-title">QUICK <span style="color:#65e8ff">NOTES</span></div>
+            <div class="nyvik-sub">CAPTURE // PIN // FIND LATER</div>
+        </div>
+    </div>
+    <div class="section studio-grid">
+        <div class="studio-card">
+            <h3>NOVA NOTA</h3>
+            <div class="form-grid">
+                <input id="noteTitle" class="palm-input" maxlength="100" placeholder="Título">
+                <select id="noteCategory" class="palm-select">
+                    <option>Geral</option><option>Ideia</option><option>Projeto</option><option>Desenho</option><option>ETEC</option><option>E-commerce</option><option>Servidor</option><option>Importante</option>
+                </select>
+            </div>
+            <textarea id="noteBody" class="studio-textarea" placeholder="Escreve aqui..."></textarea>
+            <button onclick="saveNote()">SALVAR NOTA</button>
+        </div>
+        <div class="studio-card">
+            <h3>ARQUIVO</h3>
+            <input id="noteSearch" class="palm-input" placeholder="Buscar notas..." oninput="renderNotes()">
+            <div id="notesGrid" class="note-grid"></div>
+        </div>
+    </div>
 </div>
 
 <div id="module-calendar" class="module-page">
-    <div class="module-placeholder"><strong>CALENDAR / TASKS</strong><span>Calendário, tarefas, lembretes de desenho e estudo entram aqui.</span></div>
+    <div class="planner-hero">
+        <div>
+            <div class="nyvik-kicker" style="color:#ffbd59">PALMICORP // PERSONAL PLANNER</div>
+            <div class="nyvik-title">CALENDAR <span style="color:#ffbd59">/ TASKS</span></div>
+            <div class="nyvik-sub">PLAN // EXECUTE // CHECK OFF</div>
+        </div>
+    </div>
+    <div class="section studio-grid">
+        <div class="studio-card">
+            <h3>NOVA TAREFA</h3>
+            <div class="form-grid">
+                <input id="taskTitle" class="palm-input" maxlength="120" placeholder="O que precisa fazer?">
+                <input id="taskDue" class="palm-input" type="date">
+                <select id="taskCategory" class="palm-select">
+                    <option>Geral</option><option>NYVIK ART</option><option>ETEC</option><option>E-commerce</option><option>PALMICORP</option><option>Pessoal</option>
+                </select>
+                <select id="taskPriority" class="palm-select">
+                    <option>Normal</option><option>Alta</option><option>Baixa</option>
+                </select>
+            </div>
+            <button onclick="saveTask()">ADICIONAR TAREFA</button>
+            <div id="taskList" class="task-list"></div>
+        </div>
+        <div class="studio-card">
+            <h3>CALENDÁRIO</h3>
+            <div class="calendar-shell">
+                <div class="calendar-head">
+                    <button onclick="moveCalendar(-1)">◀</button>
+                    <div id="calendarTitle" class="calendar-title">--</div>
+                    <button onclick="moveCalendar(1)">▶</button>
+                </div>
+                <div id="calendarGrid" class="calendar-grid"></div>
+            </div>
+        </div>
+    </div>
 </div>
 
 <div id="module-system" class="module-page">
-    <div class="module-placeholder"><strong>PALMICORP SYSTEM</strong><span>Alert Center, Offline UI, PWA, ícones, versioning e controles do servidor.</span></div>
+    <div class="studio-grid">
+        <div class="studio-card">
+            <h3>ALERT CENTER</h3>
+            <p>Alertas locais da PALMICORP, servidor e seus compromissos.</p>
+            <div id="alertList" class="alert-list"></div>
+        </div>
+        <div class="studio-card">
+            <h3>WORLD CLOCK</h3>
+            <p>Horários úteis reunidos no terminal.</p>
+            <div class="world-grid">
+                <div class="world-clock"><div class="world-city">BRASÍLIA</div><div class="world-time" id="worldBrasilia">--:--</div><div class="world-date" id="worldBrasiliaDate">--</div></div>
+                <div class="world-clock"><div class="world-city">LISBOA</div><div class="world-time" id="worldLisbon">--:--</div><div class="world-date" id="worldLisbonDate">--</div></div>
+                <div class="world-clock"><div class="world-city">BERLIM</div><div class="world-time" id="worldBerlin">--:--</div><div class="world-date" id="worldBerlinDate">--</div></div>
+                <div class="world-clock"><div class="world-city">TÓQUIO</div><div class="world-time" id="worldTokyo">--:--</div><div class="world-date" id="worldTokyoDate">--</div></div>
+            </div>
+        </div>
+    </div>
+    <div class="section studio-card">
+        <h3>PALMICORP VERSIONING</h3>
+        <div class="big" style="color:#65e8ff">v2.2.0-alpha</div>
+        <div class="small">NYVIK ART // E-COMMERCE LAB // NOTES // CALENDAR // ALERT CENTER</div>
+    </div>
 </div>
 
 <div id="artViewer" class="viewer-modal" onclick="viewerBackdrop(event)">
@@ -1693,7 +1957,7 @@ body::after {
 
 PALMICORP TERMINAL SYSTEM
 <br>
-VERSION 2.1.0-alpha // NYVIK ART + E-COMMERCE LAB
+VERSION 2.2.0-alpha // PERSONAL OS EXPANSION
 
 </footer>
 
@@ -1711,7 +1975,8 @@ function showModule(name, button) {
     const page = document.getElementById('module-' + name);
     if (page) page.classList.add('active');
     if (button) button.classList.add('active');
-    if (name === 'art' || name === 'etec' || name === 'ecommerce') refreshPersonal();
+    if (['art','etec','ecommerce','notes','calendar','system'].includes(name)) refreshPersonal();
+    if (name === 'system') renderAlerts();
 }
 
 function toast(message) {
@@ -1765,9 +2030,13 @@ async function refreshPersonal() {
 
         document.getElementById('ecommerceDays').textContent = personalState.ecommerce_days || 0;
         document.getElementById('ecommerceLessonCount').textContent = (personalState.ecommerce_log || []).length;
-        document.getElementById('ecommerceLog').innerHTML = (personalState.ecommerce_log || []).slice().reverse().slice(0,30).map(item =>
-            `<div class="log-entry"><strong>${escapeHtml(item.date)} // ${escapeHtml(item.category || 'Geral')}</strong><br>${escapeHtml(item.text)}</div>`
-        ).join('') || '<div class="small">Nenhuma aula arquivada ainda.</div>';
+        document.getElementById('ecommerceTopicCount').textContent = new Set((personalState.ecommerce_log || []).map(x => x.category).filter(Boolean)).size;
+        syncEcommerceFilters();
+        renderEcommerceLog();
+        renderNotes();
+        renderTasks();
+        renderCalendar();
+        renderAlerts();
     } catch (error) {
         console.log('Personal API error', error);
     }
@@ -1814,21 +2083,177 @@ async function saveStudyNote() {
 
 async function saveEcommerceNote() {
     const input = document.getElementById('ecommerceNote');
-    const category = document.getElementById('ecommerceCategory').value || 'Geral';
-    const value = input.value.trim();
-    if (!value) return toast('Escreve o que você aprendeu primeiro.');
+    const payload = {
+        action:'ecommerce_note',
+        text: input.value.trim(),
+        category: document.getElementById('ecommerceCategory').value || 'Geral',
+        lesson: document.getElementById('ecommerceLesson').value.trim(),
+        level: document.getElementById('ecommerceLevel').value || 'Aprendendo',
+        apply: document.getElementById('ecommerceApply').value.trim(),
+        question: document.getElementById('ecommerceQuestion').value.trim(),
+        next_action: document.getElementById('ecommerceAction').value.trim()
+    };
+    if (!payload.text) return toast('Escreve o que você aprendeu primeiro.');
     try {
         const response = await fetch('/api/personal', {
-            method:'POST',
-            headers:{'Content-Type':'application/json'},
-            body:JSON.stringify({action:'ecommerce_note', text:value, category})
+            method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(payload)
         });
         const data = await response.json();
         if (!response.ok) throw new Error(data.error || 'Falha');
-        input.value = '';
+        ['ecommerceNote','ecommerceLesson','ecommerceApply','ecommerceQuestion','ecommerceAction'].forEach(id => document.getElementById(id).value='');
         await refreshPersonal();
         toast('E-COMMERCE LAB // aprendizado arquivado');
     } catch (e) { toast(e.message || 'Falha ao salvar'); }
+}
+
+function syncEcommerceFilters() {
+    const filter = document.getElementById('ecommerceFilter');
+    if (!filter) return;
+    const current = filter.value;
+    const cats = [...new Set((personalState?.ecommerce_log || []).map(x => x.category).filter(Boolean))].sort();
+    filter.innerHTML = '<option value="">Todas as áreas</option>' + cats.map(x => `<option value="${escapeHtml(x)}">${escapeHtml(x)}</option>`).join('');
+    filter.value = cats.includes(current) ? current : '';
+}
+
+function renderEcommerceLog() {
+    const target = document.getElementById('ecommerceLog');
+    if (!target) return;
+    const search = (document.getElementById('ecommerceSearch')?.value || '').trim().toLowerCase();
+    const category = document.getElementById('ecommerceFilter')?.value || '';
+    const items = (personalState?.ecommerce_log || []).slice().reverse().filter(item => {
+        if (category && item.category !== category) return false;
+        const blob = [item.category,item.lesson,item.level,item.text,item.apply,item.question,item.next_action].join(' ').toLowerCase();
+        return !search || blob.includes(search);
+    }).slice(0,80);
+    target.innerHTML = items.map(item => `
+        <div class="log-entry">
+            <div class="ecom-entry-title">${escapeHtml(item.category || 'Geral')} // ${escapeHtml(item.level || 'Aprendendo')}</div>
+            <div class="ecom-entry-meta">${escapeHtml(item.date || '')}${item.lesson ? ' // ' + escapeHtml(item.lesson) : ''}</div>
+            <div class="ecom-entry-section"><strong>APRENDI:</strong> ${escapeHtml(item.text || '')}</div>
+            ${item.apply ? `<div class="ecom-entry-section"><strong>APLICAR:</strong> ${escapeHtml(item.apply)}</div>` : ''}
+            ${item.question ? `<div class="ecom-entry-section"><strong>REVISAR:</strong> ${escapeHtml(item.question)}</div>` : ''}
+            ${item.next_action ? `<div class="ecom-entry-section"><strong>PRÓXIMA AÇÃO:</strong> ${escapeHtml(item.next_action)}</div>` : ''}
+        </div>`).join('') || '<div class="small">Nenhum aprendizado encontrado.</div>';
+}
+
+async function saveNote() {
+    const title = document.getElementById('noteTitle').value.trim();
+    const text = document.getElementById('noteBody').value.trim();
+    const category = document.getElementById('noteCategory').value || 'Geral';
+    if (!title && !text) return toast('Escreve a nota primeiro.');
+    try {
+        await apiPersonal({action:'note_add', title, text, category});
+        document.getElementById('noteTitle').value=''; document.getElementById('noteBody').value='';
+        toast('NOTES // nota salva');
+    } catch(e) { toast(e.message); }
+}
+
+function renderNotes() {
+    const target = document.getElementById('notesGrid');
+    if (!target) return;
+    const search = (document.getElementById('noteSearch')?.value || '').trim().toLowerCase();
+    const items = (personalState?.notes || []).slice().sort((a,b) => Number(b.pinned)-Number(a.pinned) || Number(b.id)-Number(a.id)).filter(n =>
+        !search || [n.title,n.text,n.category].join(' ').toLowerCase().includes(search)
+    );
+    target.innerHTML = items.map(n => `<div class="note-card ${n.pinned?'pinned':''}">
+        <div class="note-meta">${escapeHtml(n.category || 'Geral')} // ${escapeHtml(n.date || '')}</div>
+        <div class="note-title">${escapeHtml(n.title || 'SEM TÍTULO')}</div>
+        <div class="note-body">${escapeHtml(n.text || '')}</div>
+        <div class="note-actions"><button onclick="noteAction('note_pin', ${Number(n.id)})">${n.pinned?'DESAFIXAR':'FIXAR'}</button><button onclick="noteAction('note_delete', ${Number(n.id)})">EXCLUIR</button></div>
+    </div>`).join('') || '<div class="small">Nenhuma nota ainda.</div>';
+}
+
+async function noteAction(action, id) {
+    try { await apiPersonal({action, id}); toast('NOTES // atualizado'); } catch(e) { toast(e.message); }
+}
+
+async function saveTask() {
+    const title = document.getElementById('taskTitle').value.trim();
+    if (!title) return toast('Digite a tarefa primeiro.');
+    try {
+        await apiPersonal({action:'task_add', title, due:document.getElementById('taskDue').value, category:document.getElementById('taskCategory').value, priority:document.getElementById('taskPriority').value});
+        document.getElementById('taskTitle').value='';
+        toast('CALENDAR // tarefa adicionada');
+    } catch(e) { toast(e.message); }
+}
+
+function taskClass(task) {
+    if (task.done) return 'done';
+    const today = new Date().toISOString().slice(0,10);
+    if (task.due && task.due < today) return 'overdue';
+    if (task.due === today) return 'today';
+    return '';
+}
+
+function renderTasks() {
+    const target = document.getElementById('taskList');
+    if (!target) return;
+    const items = (personalState?.tasks || []).slice().sort((a,b) => Number(a.done)-Number(b.done) || String(a.due||'9999').localeCompare(String(b.due||'9999')) || Number(b.id)-Number(a.id));
+    target.innerHTML = items.map(t => `<div class="task-item ${taskClass(t)}">
+        <input class="task-check" type="checkbox" ${t.done?'checked':''} onchange="taskAction('task_toggle', ${Number(t.id)})">
+        <div><div class="task-title">${escapeHtml(t.title)}</div><div class="task-meta">${escapeHtml(t.category || 'Geral')} // ${escapeHtml(t.priority || 'Normal')}${t.due ? ' // ' + escapeHtml(t.due.split('-').reverse().join('/')) : ''}</div></div>
+        <button class="task-delete" onclick="taskAction('task_delete', ${Number(t.id)})">EXCLUIR</button>
+    </div>`).join('') || '<div class="small">Nenhuma tarefa pendente.</div>';
+}
+
+async function taskAction(action, id) {
+    try { await apiPersonal({action, id}); } catch(e) { toast(e.message); }
+}
+
+async function apiPersonal(payload) {
+    const response = await fetch('/api/personal', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(payload)});
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.error || 'Falha');
+    await refreshPersonal();
+    return data;
+}
+
+let calendarCursor = new Date();
+calendarCursor.setDate(1);
+function moveCalendar(delta) { calendarCursor.setMonth(calendarCursor.getMonth()+delta); renderCalendar(); }
+function renderCalendar() {
+    const grid = document.getElementById('calendarGrid');
+    if (!grid) return;
+    const year=calendarCursor.getFullYear(), month=calendarCursor.getMonth();
+    const first=new Date(year,month,1), start=(first.getDay()+6)%7, days=new Date(year,month+1,0).getDate();
+    document.getElementById('calendarTitle').textContent = new Intl.DateTimeFormat('pt-BR',{month:'long',year:'numeric'}).format(first).toUpperCase();
+    const heads=['SEG','TER','QUA','QUI','SEX','SÁB','DOM'].map(x=>`<div class="calendar-cell head">${x}</div>`);
+    const cells=[]; const today=new Date();
+    for(let i=0;i<start;i++) cells.push('<div class="calendar-cell muted"></div>');
+    for(let d=1;d<=days;d++){
+        const iso=`${year}-${String(month+1).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
+        const has=(personalState?.tasks||[]).some(t=>t.due===iso && !t.done);
+        const isToday=today.getFullYear()===year&&today.getMonth()===month&&today.getDate()===d;
+        cells.push(`<div class="calendar-cell ${has?'has-task':''} ${isToday?'today':''}">${d}</div>`);
+    }
+    grid.innerHTML=heads.join('')+cells.join('');
+}
+
+let lastSystemStatus = null;
+function renderAlerts() {
+    const target=document.getElementById('alertList'); if(!target) return;
+    const alerts=[]; const today=new Date().toISOString().slice(0,10);
+    if(lastSystemStatus?.megavault==='OFFLINE') alerts.push(['danger','MEGAVAULT OFFLINE','O serviço não respondeu à PALMICORP.']);
+    else if(lastSystemStatus?.megavault==='ONLINE') alerts.push(['ok','MEGAVAULT ONLINE','Serviço respondendo normalmente.']);
+    if(Number(lastSystemStatus?.battery) <= 20) alerts.push(['warn','BATERIA BAIXA',`PALM-TERM-01 está em ${lastSystemStatus.battery}%.`]);
+    const overdue=(personalState?.tasks||[]).filter(t=>!t.done&&t.due&&t.due<today).length;
+    const dueToday=(personalState?.tasks||[]).filter(t=>!t.done&&t.due===today).length;
+    if(overdue) alerts.push(['danger','TAREFAS ATRASADAS',`${overdue} tarefa(s) passaram da data.`]);
+    if(dueToday) alerts.push(['warn','TAREFAS DE HOJE',`${dueToday} tarefa(s) marcadas para hoje.`]);
+    if(personalState?.art_last_day!==today) alerts.push(['warn','NYVIK ART','Desenho ainda não foi marcado hoje.']);
+    if(personalState?.study_last_day!==today) alerts.push(['warn','ETEC STUDY','Estudo ainda não foi marcado hoje.']);
+    if(!alerts.length) alerts.push(['ok','ALL SYSTEMS NOMINAL','Nenhum alerta local agora.']);
+    target.innerHTML=alerts.map(a=>`<div class="alert-item ${a[0]}"><div class="alert-title">${a[1]}</div><div class="alert-text">${a[2]}</div></div>`).join('');
+}
+
+function updateWorldClocks() {
+    const zones=[['worldBrasilia','worldBrasiliaDate','America/Sao_Paulo'],['worldLisbon','worldLisbonDate','Europe/Lisbon'],['worldBerlin','worldBerlinDate','Europe/Berlin'],['worldTokyo','worldTokyoDate','Asia/Tokyo']];
+    const now=new Date();
+    zones.forEach(([tid,did,zone])=>{
+        const t=document.getElementById(tid), d=document.getElementById(did); if(!t||!d)return;
+        t.textContent=new Intl.DateTimeFormat('pt-BR',{timeZone:zone,hour:'2-digit',minute:'2-digit',hour12:false}).format(now);
+        d.textContent=new Intl.DateTimeFormat('pt-BR',{timeZone:zone,day:'2-digit',month:'2-digit'}).format(now);
+    });
 }
 
 function openArtBook(name) {
@@ -2025,6 +2450,7 @@ async function refreshSystem() {
 
         const data =
             await response.json();
+        lastSystemStatus = data;
 
 
         document.getElementById(
@@ -2109,6 +2535,7 @@ async function refreshSystem() {
             );
 
         }
+        renderAlerts();
 
     }
 
@@ -2189,11 +2616,13 @@ function bootSequence() {
 
 
 updateBrasiliaClock();
+updateWorldClocks();
 
 setInterval(
     updateBrasiliaClock,
     1000
 );
+setInterval(updateWorldClocks, 1000);
 
 setupPalmicorpQr();
 
@@ -2411,6 +2840,15 @@ class Handler(BaseHTTPRequestHandler):
                 action = str(payload.get("action") or "")
                 note = str(payload.get("text") or "").strip()[:4000]
                 category = str(payload.get("category") or "Geral").strip()[:60]
+                title = str(payload.get("title") or "").strip()[:120]
+                lesson = str(payload.get("lesson") or "").strip()[:120]
+                level = str(payload.get("level") or "Aprendendo").strip()[:40]
+                apply_text = str(payload.get("apply") or "").strip()[:3000]
+                question = str(payload.get("question") or "").strip()[:3000]
+                next_action = str(payload.get("next_action") or "").strip()[:3000]
+                due = str(payload.get("due") or "").strip()[:10]
+                priority = str(payload.get("priority") or "Normal").strip()[:20]
+                item_id = int(payload.get("id") or 0)
                 state = load_personal_state()
                 today = datetime.now().strftime("%d/%m/%Y")
                 iso_today = datetime.now().strftime("%Y-%m-%d")
@@ -2433,8 +2871,41 @@ class Handler(BaseHTTPRequestHandler):
                     if state.get("ecommerce_last_day") != iso_today:
                         state["ecommerce_days"] = int(state.get("ecommerce_days") or 0) + 1
                         state["ecommerce_last_day"] = iso_today
-                    state.setdefault("ecommerce_log", []).append({"date": today, "category": category, "text": note})
-                    state["ecommerce_log"] = state["ecommerce_log"][-300:]
+                    state.setdefault("ecommerce_log", []).append({
+                        "date": today, "category": category, "lesson": lesson, "level": level,
+                        "text": note, "apply": apply_text, "question": question, "next_action": next_action,
+                    })
+                    state["ecommerce_log"] = state["ecommerce_log"][-500:]
+                elif action == "note_add" and (title or note):
+                    state.setdefault("notes", []).append({
+                        "id": int(time.time() * 1000), "date": today, "title": title or "Sem título",
+                        "category": category, "text": note, "pinned": False,
+                    })
+                    state["notes"] = state["notes"][-500:]
+                elif action in {"note_pin", "note_delete"} and item_id:
+                    notes = state.setdefault("notes", [])
+                    found = next((x for x in notes if int(x.get("id") or 0) == item_id), None)
+                    if not found:
+                        self.send_json({"error": "Nota não encontrada."}, 404); return
+                    if action == "note_pin": found["pinned"] = not bool(found.get("pinned"))
+                    else: state["notes"] = [x for x in notes if int(x.get("id") or 0) != item_id]
+                elif action == "task_add" and title:
+                    if due:
+                        try: datetime.strptime(due, "%Y-%m-%d")
+                        except ValueError:
+                            self.send_json({"error": "Data inválida."}, 400); return
+                    state.setdefault("tasks", []).append({
+                        "id": int(time.time() * 1000), "title": title, "due": due,
+                        "category": category, "priority": priority, "done": False, "created": today,
+                    })
+                    state["tasks"] = state["tasks"][-500:]
+                elif action in {"task_toggle", "task_delete"} and item_id:
+                    tasks = state.setdefault("tasks", [])
+                    found = next((x for x in tasks if int(x.get("id") or 0) == item_id), None)
+                    if not found:
+                        self.send_json({"error": "Tarefa não encontrada."}, 404); return
+                    if action == "task_toggle": found["done"] = not bool(found.get("done"))
+                    else: state["tasks"] = [x for x in tasks if int(x.get("id") or 0) != item_id]
                 else:
                     self.send_json({"error": "Ação inválida."}, 400)
                     return
