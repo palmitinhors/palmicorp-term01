@@ -1,5 +1,6 @@
 from http.server import ThreadingHTTPServer, BaseHTTPRequestHandler
 from datetime import datetime
+import base64
 import hashlib
 import hmac
 import json
@@ -9,9 +10,17 @@ from pathlib import Path
 import re
 import secrets
 import socket
+import struct
 import time
 import urllib.parse
 import urllib.request
+
+try:
+    from cryptography.hazmat.primitives.ciphers.aead import AESGCM
+    CRYPTO_AVAILABLE = True
+except Exception:
+    AESGCM = None
+    CRYPTO_AVAILABLE = False
 
 PORT = 8080
 
@@ -45,7 +54,22 @@ AUTH_ITERATIONS = 220_000
 SESSION_TTL_SECONDS = 8 * 60 * 60
 SESSIONS = {}
 
-for folder in (DATA_DIR, ART_BOOKS_DIR, ART_DRAWINGS_DIR):
+# Encrypted Vault Core. Everything here lives outside the Git repository.
+VAULT_DIR = AUTH_DIR / "vault"
+VAULT_META_FILE = VAULT_DIR / "vault_meta.json"
+PASSWORD_VAULT_FILE = VAULT_DIR / "passwords.enc.json"
+FILE_VAULT_INDEX_FILE = VAULT_DIR / "files.enc.json"
+FILE_VAULT_BLOBS_DIR = VAULT_DIR / "blobs"
+VAULT_TTL_SECONDS = 30 * 60
+VAULT_KEYS = {}
+VAULT_KDF_N = 2 ** 14
+VAULT_KDF_R = 8
+VAULT_KDF_P = 1
+VAULT_FILE_MAGIC = b"PVF1"
+VAULT_FILE_CHUNK = 256 * 1024
+MAX_VAULT_FILE_BYTES = 128 * 1024 * 1024
+
+for folder in (DATA_DIR, ART_BOOKS_DIR, ART_DRAWINGS_DIR, VAULT_DIR, FILE_VAULT_BLOBS_DIR):
     folder.mkdir(parents=True, exist_ok=True)
 
 
@@ -120,6 +144,7 @@ def purge_sessions():
     expired = [token for token, expires in SESSIONS.items() if expires <= now]
     for token in expired:
         SESSIONS.pop(token, None)
+        VAULT_KEYS.pop(token, None)
 
 
 def create_session():
@@ -148,6 +173,243 @@ def read_cookie(header, name):
         if sep and key == name:
             return value.strip()
     return ""
+
+
+
+def _atomic_write_text(path, text):
+    temp = path.with_name(path.name + ".tmp")
+    temp.write_text(text, encoding="utf-8")
+    try:
+        os.chmod(temp, 0o600)
+    except Exception:
+        pass
+    temp.replace(path)
+    try:
+        os.chmod(path, 0o600)
+    except Exception:
+        pass
+
+
+def load_vault_meta():
+    try:
+        data = json.loads(VAULT_META_FILE.read_text(encoding="utf-8"))
+        if not isinstance(data, dict) or not data.get("salt") or not data.get("verifier"):
+            return None
+        return data
+    except Exception:
+        return None
+
+
+def derive_vault_key(password, salt, n=VAULT_KDF_N, r=VAULT_KDF_R, p=VAULT_KDF_P):
+    return hashlib.scrypt(
+        password.encode("utf-8"),
+        salt=salt,
+        n=int(n),
+        r=int(r),
+        p=int(p),
+        dklen=32,
+    )
+
+
+def encrypt_json_store(path, data, key, aad):
+    if not CRYPTO_AVAILABLE:
+        raise RuntimeError("Cryptography module is not installed.")
+    nonce = secrets.token_bytes(12)
+    plain = json.dumps(data, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
+    cipher = AESGCM(key).encrypt(nonce, plain, aad)
+    payload = {
+        "version": 1,
+        "nonce": base64.b64encode(nonce).decode("ascii"),
+        "ciphertext": base64.b64encode(cipher).decode("ascii"),
+    }
+    _atomic_write_text(path, json.dumps(payload, separators=(",", ":")))
+
+
+def decrypt_json_store(path, key, aad, fallback):
+    if not path.exists():
+        return fallback
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    nonce = base64.b64decode(payload["nonce"])
+    cipher = base64.b64decode(payload["ciphertext"])
+    plain = AESGCM(key).decrypt(nonce, cipher, aad)
+    data = json.loads(plain.decode("utf-8"))
+    return data if isinstance(data, type(fallback)) else fallback
+
+
+def configure_vault(master_password):
+    if not CRYPTO_AVAILABLE:
+        raise RuntimeError("Crypto engine unavailable. Install python-cryptography first.")
+    if load_vault_meta() is not None:
+        raise ValueError("O Vault já foi configurado.")
+    if len(master_password) < 12:
+        raise ValueError("Use pelo menos 12 caracteres na senha mestra do Vault.")
+    if len(master_password) > 240:
+        raise ValueError("Senha mestra longa demais.")
+    salt = secrets.token_bytes(16)
+    key = derive_vault_key(master_password, salt)
+    nonce = secrets.token_bytes(12)
+    verifier = AESGCM(key).encrypt(nonce, b"PALMICORP-VAULT-V1", b"vault-verifier-v1")
+    meta = {
+        "version": 1,
+        "cipher": "AES-256-GCM",
+        "kdf": "scrypt",
+        "n": VAULT_KDF_N,
+        "r": VAULT_KDF_R,
+        "p": VAULT_KDF_P,
+        "salt": salt.hex(),
+        "verifier_nonce": base64.b64encode(nonce).decode("ascii"),
+        "verifier": base64.b64encode(verifier).decode("ascii"),
+        "created": datetime.now().isoformat(timespec="seconds"),
+    }
+    _atomic_write_text(VAULT_META_FILE, json.dumps(meta, indent=2))
+    encrypt_json_store(PASSWORD_VAULT_FILE, {"entries": []}, key, b"password-store-v1")
+    encrypt_json_store(FILE_VAULT_INDEX_FILE, {"files": []}, key, b"file-index-v1")
+    return key
+
+
+def unlock_vault(master_password):
+    if not CRYPTO_AVAILABLE:
+        raise RuntimeError("Crypto engine unavailable. Install python-cryptography first.")
+    meta = load_vault_meta()
+    if not meta:
+        raise ValueError("Vault ainda não foi configurado.")
+    try:
+        salt = bytes.fromhex(str(meta["salt"]))
+        key = derive_vault_key(
+            master_password,
+            salt,
+            int(meta.get("n") or VAULT_KDF_N),
+            int(meta.get("r") or VAULT_KDF_R),
+            int(meta.get("p") or VAULT_KDF_P),
+        )
+        nonce = base64.b64decode(meta["verifier_nonce"])
+        verifier = base64.b64decode(meta["verifier"])
+        plain = AESGCM(key).decrypt(nonce, verifier, b"vault-verifier-v1")
+        if not hmac.compare_digest(plain, b"PALMICORP-VAULT-V1"):
+            raise ValueError("invalid")
+        return key
+    except Exception:
+        raise ValueError("Senha mestra do Vault incorreta.")
+
+
+def set_vault_key(session_token, key):
+    if not session_token:
+        raise ValueError("Sessão inválida.")
+    VAULT_KEYS[session_token] = {"key": key, "expires": time.time() + VAULT_TTL_SECONDS}
+
+
+def vault_key_for_session(session_token, touch=True):
+    if not session_token:
+        return None
+    item = VAULT_KEYS.get(session_token)
+    if not item:
+        return None
+    if float(item.get("expires") or 0) <= time.time():
+        VAULT_KEYS.pop(session_token, None)
+        return None
+    if touch:
+        item["expires"] = time.time() + VAULT_TTL_SECONDS
+    return item.get("key")
+
+
+def lock_vault_session(session_token):
+    if session_token:
+        VAULT_KEYS.pop(session_token, None)
+
+
+def load_password_store(key):
+    return decrypt_json_store(PASSWORD_VAULT_FILE, key, b"password-store-v1", {"entries": []})
+
+
+def save_password_store(key, store):
+    encrypt_json_store(PASSWORD_VAULT_FILE, store, key, b"password-store-v1")
+
+
+def load_file_index(key):
+    return decrypt_json_store(FILE_VAULT_INDEX_FILE, key, b"file-index-v1", {"files": []})
+
+
+def save_file_index(key, index):
+    encrypt_json_store(FILE_VAULT_INDEX_FILE, index, key, b"file-index-v1")
+
+
+def vault_status(session_token):
+    configured = load_vault_meta() is not None
+    key = vault_key_for_session(session_token, touch=False)
+    result = {
+        "crypto_available": CRYPTO_AVAILABLE,
+        "configured": configured,
+        "unlocked": bool(configured and key),
+        "unlock_ttl_seconds": VAULT_TTL_SECONDS,
+        "transport_secure": False,
+        "cipher": "AES-256-GCM" if CRYPTO_AVAILABLE else "UNAVAILABLE",
+        "password_count": 0,
+        "file_count": 0,
+    }
+    if key:
+        try:
+            result["password_count"] = len(load_password_store(key).get("entries") or [])
+            result["file_count"] = len(load_file_index(key).get("files") or [])
+        except Exception:
+            result["unlocked"] = False
+            lock_vault_session(session_token)
+    return result
+
+
+def encrypt_vault_file(source_stream, length, target, key, file_id):
+    aes = AESGCM(key)
+    remaining = length
+    chunk_index = 0
+    temp = target.with_name(target.name + ".uploading")
+    with temp.open("wb") as out:
+        out.write(VAULT_FILE_MAGIC)
+        out.write(struct.pack(">I", VAULT_FILE_CHUNK))
+        while remaining > 0:
+            chunk = source_stream.read(min(VAULT_FILE_CHUNK, remaining))
+            if not chunk:
+                raise ValueError("Upload interrompido antes do fim.")
+            nonce = secrets.token_bytes(12)
+            aad = f"{file_id}:{chunk_index}".encode("utf-8")
+            cipher = aes.encrypt(nonce, chunk, aad)
+            out.write(nonce)
+            out.write(struct.pack(">I", len(cipher)))
+            out.write(cipher)
+            remaining -= len(chunk)
+            chunk_index += 1
+    temp.replace(target)
+    try:
+        os.chmod(target, 0o600)
+    except Exception:
+        pass
+
+
+def iter_decrypted_vault_file(path, key, file_id):
+    aes = AESGCM(key)
+    with path.open("rb") as handle:
+        if handle.read(4) != VAULT_FILE_MAGIC:
+            raise ValueError("Arquivo do Vault inválido.")
+        raw_chunk_size = handle.read(4)
+        if len(raw_chunk_size) != 4:
+            raise ValueError("Arquivo do Vault corrompido.")
+        chunk_index = 0
+        while True:
+            nonce = handle.read(12)
+            if not nonce:
+                break
+            if len(nonce) != 12:
+                raise ValueError("Arquivo do Vault corrompido.")
+            raw_len = handle.read(4)
+            if len(raw_len) != 4:
+                raise ValueError("Arquivo do Vault corrompido.")
+            cipher_len = struct.unpack(">I", raw_len)[0]
+            if cipher_len < 16 or cipher_len > VAULT_FILE_CHUNK + 16:
+                raise ValueError("Chunk inválido no Vault.")
+            cipher = handle.read(cipher_len)
+            if len(cipher) != cipher_len:
+                raise ValueError("Arquivo do Vault corrompido.")
+            aad = f"{file_id}:{chunk_index}".encode("utf-8")
+            yield aes.decrypt(nonce, cipher, aad)
+            chunk_index += 1
 
 
 def default_personal_state():
@@ -1441,6 +1703,48 @@ footer {
 
 
 /* =========================================================
+   PALMICORP v2.5 // ENCRYPTED VAULT CORE
+   ========================================================= */
+
+.vault-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(190px,1fr)); gap:10px; margin-top:14px; }
+.vault-card { border:1px solid rgba(119,255,157,.22); border-radius:13px; padding:14px; background:linear-gradient(135deg,rgba(119,255,157,.035),transparent 55%),#080d0b; }
+.vault-card .security-label { color:#6e8978; }
+.vault-gate { margin-top:14px; border:1px solid rgba(119,255,157,.25); border-radius:16px; padding:18px; background:#07100c; }
+.vault-gate h3 { margin-top:0; }
+.vault-hidden { display:none !important; }
+.vault-warning { border:1px solid rgba(255,189,89,.34); background:rgba(255,189,89,.055); color:#c7a66f; border-radius:10px; padding:10px 12px; font-size:10px; line-height:1.55; margin:12px 0; }
+.vault-good { color:#77ff9d; }
+.vault-bad { color:#ff7a7a; }
+.vault-toolbar { display:flex; gap:8px; flex-wrap:wrap; align-items:center; margin:10px 0; }
+.vault-toolbar > * { flex:1 1 160px; }
+.vault-toolbar button { flex:0 0 auto; width:auto; }
+.vault-entry-list { display:grid; gap:9px; margin-top:12px; }
+.vault-entry { border:1px solid #26342d; border-radius:12px; padding:13px; background:#070c09; }
+.vault-entry.favorite { border-color:rgba(255,189,89,.42); }
+.vault-entry-head { display:flex; gap:10px; align-items:flex-start; justify-content:space-between; }
+.vault-entry-service { color:#eef7f1; font-size:13px; font-weight:700; }
+.vault-entry-meta { color:#72867a; font-size:9px; margin-top:3px; }
+.vault-secret-row { margin-top:9px; display:grid; grid-template-columns:110px 1fr auto; gap:8px; align-items:center; font-size:10px; }
+.vault-secret-label { color:#617368; }
+.vault-secret-value { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; color:#cbd8cf; font-family:Consolas,monospace; }
+.vault-mini { width:auto; padding:6px 8px; font-size:8px; }
+.vault-actions { display:flex; gap:7px; flex-wrap:wrap; margin-top:11px; }
+.vault-actions button { width:auto; padding:7px 9px; font-size:9px; }
+.vault-file-list { display:grid; gap:8px; margin-top:12px; }
+.vault-file-item { display:grid; grid-template-columns:1fr auto; gap:10px; align-items:center; border:1px solid #26342d; border-radius:11px; padding:11px; background:#070c09; }
+.vault-file-name { color:#dce9df; font-size:11px; word-break:break-word; }
+.vault-file-meta { color:#6d7e72; font-size:9px; margin-top:3px; }
+.vault-file-actions { display:flex; gap:6px; }
+.vault-file-actions button { width:auto; padding:7px 8px; font-size:8px; }
+.vault-state-line { display:flex; justify-content:space-between; gap:10px; align-items:center; margin:7px 0; font-size:10px; color:#829087; }
+.vault-state-line strong { color:#dce8e0; font-weight:normal; }
+
+@media(max-width:600px) {
+    .vault-secret-row { grid-template-columns:1fr; }
+    .vault-file-item { grid-template-columns:1fr; }
+}
+
+/* =========================================================
    PALMICORP v2.4 // RESILIENCE CORE
    ========================================================= */
 .resilience-banner {
@@ -2174,20 +2478,84 @@ body::after {
 <div id="module-vault" class="module-page">
     <div class="nyvik-hero" style="border-color:rgba(119,255,157,.26);background:radial-gradient(circle at 82% 18%,rgba(119,255,157,.12),transparent 35%),#07100c">
         <div>
-            <div class="nyvik-kicker" style="color:#77ff9d">PALMICORP // SECURE STORAGE FOUNDATION</div>
+            <div class="nyvik-kicker" style="color:#77ff9d">PALMICORP // ENCRYPTED PERSONAL STORAGE</div>
             <div class="nyvik-title">VAULT <span style="color:#77ff9d">CORE</span></div>
-            <div class="nyvik-sub">ACCESS CONTROL ONLINE // ENCRYPTED STORAGE COMES NEXT</div>
+            <div class="nyvik-sub">PASSWORDS // PRIVATE FILES // AES-256-GCM // LOCAL STORAGE</div>
         </div>
     </div>
-    <div class="security-grid">
-        <div class="security-card"><div class="security-label">ACCESS SESSION</div><div class="security-value good">AUTHENTICATED</div></div>
-        <div class="security-card"><div class="security-label">PASSWORD VAULT</div><div class="security-value warn">NOT STORING SECRETS YET</div></div>
-        <div class="security-card"><div class="security-label">FILE VAULT</div><div class="security-value warn">ENCRYPTION PENDING</div></div>
+
+    <div class="vault-grid">
+        <div class="vault-card"><div class="security-label">CRYPTO ENGINE</div><div id="vaultCryptoState" class="security-value">CHECKING</div></div>
+        <div class="vault-card"><div class="security-label">VAULT STATUS</div><div id="vaultLockState" class="security-value warn">LOCKED</div></div>
+        <div class="vault-card"><div class="security-label">PASSWORDS</div><div id="vaultPasswordCount" class="security-value">0</div></div>
+        <div class="vault-card"><div class="security-label">PRIVATE FILES</div><div id="vaultFileCount" class="security-value">0</div></div>
     </div>
-    <div class="section studio-card">
-        <h3>SECURITY FOUNDATION</h3>
-        <p>A tela de bloqueio agora protege as APIs pessoais, PDFs, desenhos, notas, tarefas e uploads com uma sessão autenticada. Senhas e arquivos sensíveis ainda não são armazenados aqui até a camada de criptografia ficar pronta.</p>
-        <button onclick="lockTerminal()">LOCK PALMICORP NOW</button>
+
+    <div class="vault-warning">
+        STORAGE AT REST: criptografado com AES-256-GCM. TRANSPORTE ATUAL: HTTP na rede local. Até ativarmos HTTPS, use somente em Wi-Fi confiável e não exponha a porta 8080 à internet.
+    </div>
+
+    <div id="vaultUnavailable" class="vault-gate vault-hidden">
+        <h3>CRYPTO ENGINE MISSING</h3>
+        <p>A PALMICORP encontrou o Vault, mas o módulo de criptografia ainda não está instalado no A02.</p>
+        <div class="small">No Termux, instale <strong>python-cryptography</strong> antes de usar senhas reais.</div>
+    </div>
+
+    <div id="vaultSetupGate" class="vault-gate vault-hidden">
+        <h3>CREATE VAULT MASTER KEY</h3>
+        <p>Essa senha é separada da senha da PALMICORP. Ela não é salva no GitHub nem em texto puro.</p>
+        <div class="form-grid">
+            <input id="vaultMasterSetup" class="palm-input" type="password" autocomplete="new-password" placeholder="Senha mestra do Vault — mínimo 12 caracteres">
+            <input id="vaultMasterConfirm" class="palm-input" type="password" autocomplete="new-password" placeholder="Confirmar senha mestra">
+        </div>
+        <button onclick="setupVault()">CREATE ENCRYPTED VAULT</button>
+    </div>
+
+    <div id="vaultUnlockGate" class="vault-gate vault-hidden">
+        <h3>VAULT LOCKED</h3>
+        <p>Digite a senha mestra para liberar Password Vault e File Vault nesta sessão.</p>
+        <div class="vault-toolbar">
+            <input id="vaultMasterUnlock" class="palm-input" type="password" autocomplete="current-password" placeholder="Vault master password">
+            <button onclick="unlockVault()">UNLOCK VAULT</button>
+        </div>
+    </div>
+
+    <div id="vaultUnlockedArea" class="vault-hidden">
+        <div class="section studio-grid">
+            <div class="studio-card">
+                <h3>PASSWORD VAULT</h3>
+                <p>Cadastre suas contas direto aqui. A senha mestra fica somente em memória enquanto o cofre está aberto.</p>
+                <div class="form-grid">
+                    <input id="vaultService" class="palm-input" maxlength="100" placeholder="Site / app — ex.: GitHub">
+                    <input id="vaultUsername" class="palm-input" maxlength="180" autocomplete="off" placeholder="Usuário / e-mail">
+                    <input id="vaultPassword" class="palm-input" type="password" maxlength="500" autocomplete="new-password" placeholder="Senha">
+                    <select id="vaultCategory" class="palm-select">
+                        <option>Geral</option><option>E-mail</option><option>Dev</option><option>Servidor</option><option>Estudo</option><option>E-commerce</option><option>Games</option><option>Social</option><option>Importante</option>
+                    </select>
+                </div>
+                <textarea id="vaultNote" class="studio-textarea" maxlength="1200" placeholder="Nota opcional — nunca coloque recuperação/segredo extra se não precisar."></textarea>
+                <button onclick="saveVaultPassword()">SAVE ENCRYPTED ENTRY</button>
+            </div>
+
+            <div class="studio-card">
+                <h3>MY PASSWORDS</h3>
+                <div class="vault-toolbar">
+                    <input id="vaultSearch" class="palm-input" placeholder="Buscar site, usuário ou categoria..." oninput="renderVaultPasswords()">
+                    <button onclick="lockVault()">LOCK VAULT</button>
+                </div>
+                <div id="vaultPasswordList" class="vault-entry-list"></div>
+            </div>
+        </div>
+
+        <div class="section studio-card">
+            <h3>FILE VAULT</h3>
+            <p>Arquivos privados são criptografados antes de ficar no armazenamento do A02. Os nomes também ficam dentro do índice criptografado.</p>
+            <label class="file-picker">
+                ADD PRIVATE FILE · MAX 128 MB
+                <input id="vaultFileUpload" type="file" onchange="uploadVaultFile(this)">
+            </label>
+            <div id="vaultFileList" class="vault-file-list"></div>
+        </div>
     </div>
 </div>
 
@@ -2297,7 +2665,7 @@ body::after {
     </div>
     <div class="section studio-card">
         <h3>PALMICORP VERSIONING</h3>
-        <div class="big" style="color:#65e8ff">v2.4.0-alpha</div>
+        <div class="big" style="color:#65e8ff">v2.5.0-alpha</div>
         <div class="small">RESILIENCE CORE // OFFLINE LOCAL MODE // STATUS SNAPSHOT // ACCESS CORE // PERSONAL OS</div>
     </div>
 </div>
@@ -2319,7 +2687,7 @@ body::after {
 
 PALMICORP TERMINAL SYSTEM
 <br>
-VERSION 2.4.0-alpha // RESILIENCE CORE
+VERSION 2.5.0-alpha // ENCRYPTED VAULT CORE
 
 </footer>
 
@@ -2335,6 +2703,9 @@ let palmAuthConfigured = false;
 let idleTimer = null;
 const PALM_IDLE_MS = 30 * 60 * 1000;
 const nativeFetch = window.fetch.bind(window);
+let vaultStatus = null;
+let vaultData = {passwords:[], files:[]};
+let vaultVisibleSecrets = new Set();
 
 window.fetch = async (...args) => {
     const response = await nativeFetch(...args);
@@ -2452,6 +2823,9 @@ async function submitAccess() {
 async function lockTerminal() {
     try { await nativeFetch('/api/auth/logout', {method:'POST'}); } catch (_) {}
     palmAuthenticated = false;
+    vaultStatus = null;
+    vaultData = {passwords:[], files:[]};
+    vaultVisibleSecrets.clear();
     clearTimeout(idleTimer);
     showLockScreen('login', 'TERMINAL LOCKED');
 }
@@ -2476,6 +2850,7 @@ function startAuthenticatedSession() {
     resetIdleTimer();
     refreshSystem();
     refreshPersonal();
+    refreshVaultStatus();
     renderAlerts();
     renderResilience();
     const security = document.getElementById('securityAuthState');
@@ -2489,6 +2864,7 @@ function showModule(name, button) {
     if (page) page.classList.add('active');
     if (button) button.classList.add('active');
     if (['art','etec','ecommerce','vault','notes','calendar','system'].includes(name)) refreshPersonal();
+    if (name === 'vault') refreshVaultStatus();
     if (name === 'system') renderAlerts();
 }
 
@@ -2808,6 +3184,174 @@ function updateWorldClocks() {
         t.textContent=new Intl.DateTimeFormat('pt-BR',{timeZone:zone,hour:'2-digit',minute:'2-digit',hour12:false}).format(now);
         d.textContent=new Intl.DateTimeFormat('pt-BR',{timeZone:zone,day:'2-digit',month:'2-digit'}).format(now);
     });
+}
+
+
+async function vaultJson(url, options={}) {
+    const response = await fetch(url, options);
+    let data = {};
+    try { data = await response.json(); } catch (_) {}
+    if (!response.ok) {
+        const error = new Error(data.error || ('Vault error ' + response.status));
+        error.status = response.status;
+        throw error;
+    }
+    return data;
+}
+
+function setVaultGate(id, show) {
+    const el=document.getElementById(id); if(el) el.classList.toggle('vault-hidden', !show);
+}
+
+async function refreshVaultStatus(loadData=true) {
+    if (!palmAuthenticated) return;
+    try {
+        vaultStatus = await vaultJson('/api/vault/status?t=' + Date.now(), {cache:'no-store'});
+        const crypto=document.getElementById('vaultCryptoState');
+        const lock=document.getElementById('vaultLockState');
+        if (crypto) { crypto.textContent=vaultStatus.crypto_available ? 'AES-256-GCM READY' : 'UNAVAILABLE'; crypto.className='security-value ' + (vaultStatus.crypto_available?'good':'bad'); }
+        if (lock) { lock.textContent=vaultStatus.unlocked ? 'UNLOCKED' : vaultStatus.configured ? 'LOCKED' : 'NOT CONFIGURED'; lock.className='security-value ' + (vaultStatus.unlocked?'good':'warn'); }
+        const pc=document.getElementById('vaultPasswordCount'); if(pc) pc.textContent=vaultStatus.password_count || 0;
+        const fc=document.getElementById('vaultFileCount'); if(fc) fc.textContent=vaultStatus.file_count || 0;
+        setVaultGate('vaultUnavailable', !vaultStatus.crypto_available);
+        setVaultGate('vaultSetupGate', vaultStatus.crypto_available && !vaultStatus.configured);
+        setVaultGate('vaultUnlockGate', vaultStatus.crypto_available && vaultStatus.configured && !vaultStatus.unlocked);
+        setVaultGate('vaultUnlockedArea', vaultStatus.crypto_available && vaultStatus.unlocked);
+        if (vaultStatus.unlocked && loadData) await refreshVaultData();
+        if (!vaultStatus.unlocked) { vaultData={passwords:[],files:[]}; vaultVisibleSecrets.clear(); }
+    } catch (error) {
+        console.log('Vault status error', error);
+    }
+}
+
+async function setupVault() {
+    const password=document.getElementById('vaultMasterSetup').value;
+    const confirm=document.getElementById('vaultMasterConfirm').value;
+    if (password.length < 12) return toast('Vault: use pelo menos 12 caracteres.');
+    if (password !== confirm) return toast('Vault: as senhas não conferem.');
+    try {
+        await vaultJson('/api/vault/setup', {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({password})});
+        document.getElementById('vaultMasterSetup').value='';
+        document.getElementById('vaultMasterConfirm').value='';
+        toast('VAULT CORE criado e desbloqueado');
+        await refreshVaultStatus();
+    } catch(e) { toast(e.message); }
+}
+
+async function unlockVault() {
+    const input=document.getElementById('vaultMasterUnlock');
+    const password=input.value;
+    if(!password) return toast('Digite a senha mestra do Vault.');
+    try {
+        await vaultJson('/api/vault/unlock',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({password})});
+        input.value='';
+        toast('VAULT UNLOCKED');
+        await refreshVaultStatus();
+    } catch(e) { input.value=''; toast(e.message); }
+}
+
+async function lockVault() {
+    try { await vaultJson('/api/vault/lock',{method:'POST'}); } catch(_) {}
+    vaultData={passwords:[],files:[]}; vaultVisibleSecrets.clear();
+    toast('VAULT LOCKED');
+    await refreshVaultStatus(false);
+}
+
+async function refreshVaultData() {
+    try {
+        const data=await vaultJson('/api/vault/data?t='+Date.now(),{cache:'no-store'});
+        vaultData={passwords:data.passwords||[],files:data.files||[]};
+        renderVaultPasswords(); renderVaultFiles();
+        const pc=document.getElementById('vaultPasswordCount'); if(pc) pc.textContent=vaultData.passwords.length;
+        const fc=document.getElementById('vaultFileCount'); if(fc) fc.textContent=vaultData.files.length;
+    } catch(e) {
+        if(e.status===423) await refreshVaultStatus(false);
+        else toast(e.message);
+    }
+}
+
+async function saveVaultPassword() {
+    const service=document.getElementById('vaultService').value.trim();
+    const username=document.getElementById('vaultUsername').value.trim();
+    const password=document.getElementById('vaultPassword').value;
+    const category=document.getElementById('vaultCategory').value;
+    const note=document.getElementById('vaultNote').value.trim();
+    if(!service || !password) return toast('Informe o site/app e a senha.');
+    try {
+        await vaultJson('/api/vault/password',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:'add',service,username,password,category,note})});
+        ['vaultService','vaultUsername','vaultPassword','vaultNote'].forEach(id=>document.getElementById(id).value='');
+        toast('Entrada criptografada e salva');
+        await refreshVaultData();
+    } catch(e) { toast(e.message); }
+}
+
+function renderVaultPasswords() {
+    const target=document.getElementById('vaultPasswordList'); if(!target) return;
+    const q=(document.getElementById('vaultSearch')?.value||'').trim().toLowerCase();
+    const items=(vaultData.passwords||[]).filter(x=>[x.service,x.username,x.category,x.note].some(v=>String(v||'').toLowerCase().includes(q)));
+    target.innerHTML=items.map(entry=>{
+        const id=String(entry.id||'');
+        const visible=vaultVisibleSecrets.has(id);
+        return `<div class="vault-entry ${entry.favorite?'favorite':''}">
+            <div class="vault-entry-head"><div><div class="vault-entry-service">${escapeHtml(entry.service)}</div><div class="vault-entry-meta">${escapeHtml(entry.category||'Geral')} // ${escapeHtml(entry.updated||entry.created||'')}</div></div></div>
+            <div class="vault-secret-row"><div class="vault-secret-label">USER / EMAIL</div><div class="vault-secret-value">${escapeHtml(entry.username||'—')}</div><button class="vault-mini" onclick='copyVaultField(${JSON.stringify(id)},"username")'>COPY</button></div>
+            <div class="vault-secret-row"><div class="vault-secret-label">PASSWORD</div><div class="vault-secret-value">${visible?escapeHtml(entry.password):'••••••••••••'}</div><button class="vault-mini" onclick='toggleVaultSecret(${JSON.stringify(id)})'>${visible?'HIDE':'SHOW'}</button></div>
+            ${entry.note?`<div class="vault-entry-meta" style="margin-top:9px">${escapeHtml(entry.note)}</div>`:''}
+            <div class="vault-actions"><button onclick='copyVaultField(${JSON.stringify(id)},"password")'>COPY PASSWORD</button><button onclick='deleteVaultPassword(${JSON.stringify(id)})'>DELETE</button></div>
+        </div>`;
+    }).join('') || '<div class="small">Nenhuma entrada encontrada.</div>';
+}
+
+function toggleVaultSecret(id) {
+    if(vaultVisibleSecrets.has(id)) vaultVisibleSecrets.delete(id); else vaultVisibleSecrets.add(id);
+    renderVaultPasswords();
+}
+
+async function copyTextSafe(value) {
+    try {
+        if(navigator.clipboard && window.isSecureContext) { await navigator.clipboard.writeText(value); return true; }
+    } catch(_) {}
+    const ta=document.createElement('textarea'); ta.value=value; ta.style.position='fixed'; ta.style.opacity='0'; document.body.appendChild(ta); ta.select();
+    let ok=false; try { ok=document.execCommand('copy'); } catch(_) {} ta.remove(); return ok;
+}
+
+async function copyVaultField(id, field) {
+    const entry=(vaultData.passwords||[]).find(x=>String(x.id)===String(id)); if(!entry) return;
+    const ok=await copyTextSafe(String(entry[field]||''));
+    toast(ok ? 'Copiado' : 'Não foi possível copiar automaticamente');
+}
+
+async function deleteVaultPassword(id) {
+    if(!confirm('Excluir esta entrada do Password Vault?')) return;
+    try {
+        await vaultJson('/api/vault/password',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:'delete',id})});
+        vaultVisibleSecrets.delete(String(id)); toast('Entrada removida'); await refreshVaultData();
+    } catch(e) { toast(e.message); }
+}
+
+async function uploadVaultFile(input) {
+    const file=input.files&&input.files[0]; if(!file) return;
+    if(file.size > 128*1024*1024) { input.value=''; return toast('File Vault: máximo 128 MB.'); }
+    try {
+        toast('Criptografando ' + prettySize(file.size) + ' no A02...');
+        const url='/api/vault/file/upload?name='+encodeURIComponent(file.name);
+        const response=await fetch(url,{method:'POST',headers:{'Content-Type':file.type||'application/octet-stream'},body:file});
+        const data=await response.json(); if(!response.ok) throw new Error(data.error||'Upload falhou');
+        input.value=''; toast('Arquivo criptografado no File Vault'); await refreshVaultData();
+    } catch(e) { input.value=''; toast(e.message); }
+}
+
+function renderVaultFiles() {
+    const target=document.getElementById('vaultFileList'); if(!target) return;
+    target.innerHTML=(vaultData.files||[]).map(file=>`<div class="vault-file-item"><div><div class="vault-file-name">${escapeHtml(file.name)}</div><div class="vault-file-meta">${prettySize(file.size)} // ${escapeHtml(file.created||'')}</div></div><div class="vault-file-actions"><button onclick='openVaultFile(${JSON.stringify(String(file.id))})'>OPEN</button><button onclick='deleteVaultFile(${JSON.stringify(String(file.id))})'>DELETE</button></div></div>`).join('') || '<div class="small">Nenhum arquivo privado ainda.</div>';
+}
+
+function openVaultFile(id) { window.open('/vault-file?id='+encodeURIComponent(id),'_blank','noopener'); }
+
+async function deleteVaultFile(id) {
+    if(!confirm('Excluir este arquivo criptografado do File Vault?')) return;
+    try { await vaultJson('/api/vault/file/delete',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id})}); toast('Arquivo removido'); await refreshVaultData(); }
+    catch(e) { toast(e.message); }
 }
 
 function openArtBook(name) {
@@ -3196,6 +3740,21 @@ class Handler(BaseHTTPRequestHandler):
         self.send_json({"error": "authentication required", "auth_required": True}, 401)
         return False
 
+    def require_vault_key(self):
+        if not self.require_auth():
+            return None
+        if not CRYPTO_AVAILABLE:
+            self.send_json({"error": "Crypto engine unavailable. Install python-cryptography."}, 503)
+            return None
+        if load_vault_meta() is None:
+            self.send_json({"error": "Vault not configured."}, 409)
+            return None
+        key = vault_key_for_session(self.session_token())
+        if not key:
+            self.send_json({"error": "Vault locked.", "vault_locked": True}, 423)
+            return None
+        return key
+
     def session_cookie(self, token):
         return (
             f"palm_session={token}; Path=/; Max-Age={SESSION_TTL_SECONDS}; "
@@ -3273,6 +3832,64 @@ class Handler(BaseHTTPRequestHandler):
                 "authenticated": self.authenticated(),
                 "session_ttl_seconds": SESSION_TTL_SECONDS,
             })
+            return
+
+        if self.path.startswith("/api/vault/status"):
+            if not self.require_auth():
+                return
+            self.send_json(vault_status(self.session_token()))
+            return
+
+        if self.path.startswith("/api/vault/data"):
+            key = self.require_vault_key()
+            if not key:
+                return
+            try:
+                passwords = load_password_store(key).get("entries") or []
+                files = load_file_index(key).get("files") or []
+                self.send_json({"passwords": passwords, "files": files})
+            except Exception:
+                lock_vault_session(self.session_token())
+                self.send_json({"error": "Vault integrity check failed or Vault was locked."}, 423)
+            return
+
+        if self.path.startswith("/vault-file"):
+            key = self.require_vault_key()
+            if not key:
+                return
+            try:
+                parsed = urllib.parse.urlparse(self.path)
+                query = urllib.parse.parse_qs(parsed.query)
+                file_id = str((query.get("id") or [""])[0])
+                index = load_file_index(key)
+                meta = next((x for x in index.get("files", []) if str(x.get("id")) == file_id), None)
+                if not meta:
+                    self.send_error(404)
+                    return
+                blob = FILE_VAULT_BLOBS_DIR / str(meta.get("blob") or "")
+                if not blob.is_file() or blob.parent != FILE_VAULT_BLOBS_DIR:
+                    self.send_error(404)
+                    return
+                name = safe_filename(meta.get("name") or "private-file")
+                mime = str(meta.get("mime") or "application/octet-stream")
+                total = int(meta.get("size") or 0)
+                self.send_response(200)
+                self.send_header("Content-Type", mime)
+                self.send_header("Content-Length", str(total))
+                self.send_header("Content-Disposition", f'inline; filename="{name.replace(chr(34), "")}"')
+                self.send_header("Cache-Control", "no-store")
+                self.send_header("X-Content-Type-Options", "nosniff")
+                self.send_header("Referrer-Policy", "no-referrer")
+                self.end_headers()
+                for chunk in iter_decrypted_vault_file(blob, key, file_id):
+                    self.wfile.write(chunk)
+            except (BrokenPipeError, ConnectionResetError):
+                pass
+            except Exception:
+                try:
+                    self.send_error(500)
+                except Exception:
+                    pass
             return
 
         if self.path.startswith(
@@ -3418,12 +4035,154 @@ class Handler(BaseHTTPRequestHandler):
         if self.path == "/api/auth/logout":
             token = self.session_token()
             if token:
+                lock_vault_session(token)
                 SESSIONS.pop(token, None)
             self.send_json(
                 {"ok": True},
                 200,
                 {"Set-Cookie": self.clear_session_cookie()},
             )
+            return
+
+        if self.path == "/api/vault/setup":
+            if not self.require_auth():
+                return
+            try:
+                if load_vault_meta() is not None:
+                    self.send_json({"error": "Vault already configured."}, 409)
+                    return
+                payload = self.read_json_body(max_bytes=16 * 1024)
+                password = str(payload.get("password") or "")
+                key = configure_vault(password)
+                set_vault_key(self.session_token(), key)
+                self.send_json({"ok": True, "status": vault_status(self.session_token())})
+            except Exception as error:
+                self.send_json({"error": str(error)}, 400)
+            return
+
+        if self.path == "/api/vault/unlock":
+            if not self.require_auth():
+                return
+            try:
+                payload = self.read_json_body(max_bytes=16 * 1024)
+                password = str(payload.get("password") or "")
+                key = unlock_vault(password)
+                set_vault_key(self.session_token(), key)
+                self.send_json({"ok": True, "status": vault_status(self.session_token())})
+            except Exception as error:
+                time.sleep(0.35)
+                self.send_json({"error": str(error)}, 401)
+            return
+
+        if self.path == "/api/vault/lock":
+            if not self.require_auth():
+                return
+            lock_vault_session(self.session_token())
+            self.send_json({"ok": True})
+            return
+
+        if self.path == "/api/vault/password":
+            key = self.require_vault_key()
+            if not key:
+                return
+            try:
+                payload = self.read_json_body(max_bytes=32 * 1024)
+                action = str(payload.get("action") or "")
+                store = load_password_store(key)
+                entries = store.setdefault("entries", [])
+                if action == "add":
+                    service = str(payload.get("service") or "").strip()[:100]
+                    username = str(payload.get("username") or "").strip()[:180]
+                    password = str(payload.get("password") or "")[:500]
+                    category = str(payload.get("category") or "Geral").strip()[:60]
+                    note = str(payload.get("note") or "").strip()[:1200]
+                    if not service or not password:
+                        self.send_json({"error": "Informe site/app e senha."}, 400)
+                        return
+                    now = datetime.now().strftime("%d/%m/%Y %H:%M")
+                    entries.append({
+                        "id": secrets.token_hex(12), "service": service, "username": username,
+                        "password": password, "category": category, "note": note,
+                        "favorite": False, "created": now, "updated": now,
+                    })
+                    entries[:] = entries[-1000:]
+                elif action == "delete":
+                    item_id = str(payload.get("id") or "")
+                    before = len(entries)
+                    store["entries"] = [x for x in entries if str(x.get("id")) != item_id]
+                    if len(store["entries"]) == before:
+                        self.send_json({"error": "Entrada não encontrada."}, 404)
+                        return
+                else:
+                    self.send_json({"error": "Ação inválida."}, 400)
+                    return
+                save_password_store(key, store)
+                self.send_json({"ok": True})
+            except Exception as error:
+                self.send_json({"error": str(error)}, 400)
+            return
+
+        if self.path.startswith("/api/vault/file/upload"):
+            key = self.require_vault_key()
+            if not key:
+                return
+            target = None
+            try:
+                parsed = urllib.parse.urlparse(self.path)
+                query = urllib.parse.parse_qs(parsed.query)
+                name = safe_filename((query.get("name") or [""])[0])
+                length = int(self.headers.get("Content-Length", 0))
+                if length <= 0:
+                    self.send_json({"error": "Arquivo vazio ou tamanho desconhecido."}, 400)
+                    return
+                if length > MAX_VAULT_FILE_BYTES:
+                    self.send_json({"error": "File Vault aceita no máximo 128 MB por arquivo."}, 413)
+                    return
+                mime = (self.headers.get("Content-Type") or "application/octet-stream").split(";", 1)[0].strip()[:120]
+                file_id = secrets.token_hex(16)
+                blob_name = secrets.token_hex(24) + ".pvf"
+                target = FILE_VAULT_BLOBS_DIR / blob_name
+                encrypt_vault_file(self.rfile, length, target, key, file_id)
+                index = load_file_index(key)
+                index.setdefault("files", []).append({
+                    "id": file_id, "blob": blob_name, "name": name, "mime": mime,
+                    "size": length, "created": datetime.now().strftime("%d/%m/%Y %H:%M"),
+                })
+                index["files"] = index["files"][-1000:]
+                save_file_index(key, index)
+                self.send_json({"ok": True, "id": file_id, "name": name, "size": length})
+            except Exception as error:
+                try:
+                    if target and target.exists(): target.unlink()
+                    temp = target.with_name(target.name + ".uploading") if target else None
+                    if temp and temp.exists(): temp.unlink()
+                except Exception:
+                    pass
+                self.send_json({"error": str(error)}, 400)
+            return
+
+        if self.path == "/api/vault/file/delete":
+            key = self.require_vault_key()
+            if not key:
+                return
+            try:
+                payload = self.read_json_body(max_bytes=16 * 1024)
+                file_id = str(payload.get("id") or "")
+                index = load_file_index(key)
+                files = index.setdefault("files", [])
+                meta = next((x for x in files if str(x.get("id")) == file_id), None)
+                if not meta:
+                    self.send_json({"error": "Arquivo não encontrado."}, 404)
+                    return
+                blob = FILE_VAULT_BLOBS_DIR / str(meta.get("blob") or "")
+                if blob.parent == FILE_VAULT_BLOBS_DIR:
+                    try: blob.unlink()
+                    except FileNotFoundError: pass
+                index["files"] = [x for x in files if str(x.get("id")) != file_id]
+                save_file_index(key, index)
+                self.send_json({"ok": True})
+            except Exception as error:
+                self.send_json({"error": str(error)}, 400)
             return
 
         if self.path == "/api/personal":
@@ -3696,7 +4455,7 @@ print(
 print()
 
 print(
-    "PALMICORP TERMINAL v2.4.0-alpha"
+    "PALMICORP TERMINAL v2.5.0-alpha"
 )
 
 print("=" * 42)
