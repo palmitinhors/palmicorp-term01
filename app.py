@@ -1,10 +1,13 @@
 from http.server import ThreadingHTTPServer, BaseHTTPRequestHandler
 from datetime import datetime
+import hashlib
+import hmac
 import json
 import mimetypes
 import os
 from pathlib import Path
 import re
+import secrets
 import socket
 import time
 import urllib.parse
@@ -33,9 +36,116 @@ DATA_DIR = BASE_DIR / "data"
 PERSONAL_STATE_FILE = DATA_DIR / "personal_state.json"
 ART_BOOKS_DIR = DATA_DIR / "art" / "books"
 ART_DRAWINGS_DIR = DATA_DIR / "art" / "drawings"
+AUTH_DIR = Path.home() / ".palmicorp"
+AUTH_FILE = AUTH_DIR / "auth.json"
+AUTH_DIR.mkdir(parents=True, exist_ok=True)
+AUTH_ITERATIONS = 220_000
+SESSION_TTL_SECONDS = 8 * 60 * 60
+SESSIONS = {}
 
 for folder in (DATA_DIR, ART_BOOKS_DIR, ART_DRAWINGS_DIR):
     folder.mkdir(parents=True, exist_ok=True)
+
+
+def load_auth_config():
+    try:
+        data = json.loads(AUTH_FILE.read_text(encoding="utf-8"))
+        if not isinstance(data, dict):
+            return None
+        if not data.get("salt") or not data.get("hash"):
+            return None
+        return data
+    except Exception:
+        return None
+
+
+def write_auth_config(data):
+    temp = AUTH_FILE.with_name(AUTH_FILE.name + ".tmp")
+    temp.write_text(json.dumps(data, indent=2), encoding="utf-8")
+    try:
+        os.chmod(temp, 0o600)
+    except Exception:
+        pass
+    temp.replace(AUTH_FILE)
+    try:
+        os.chmod(AUTH_FILE, 0o600)
+    except Exception:
+        pass
+
+
+def derive_password_hash(password, salt, iterations=AUTH_ITERATIONS):
+    return hashlib.pbkdf2_hmac(
+        "sha256",
+        password.encode("utf-8"),
+        salt,
+        int(iterations),
+    ).hex()
+
+
+def configure_access_password(password):
+    if load_auth_config() is not None:
+        raise ValueError("A senha de acesso já foi configurada.")
+    if len(password) < 8:
+        raise ValueError("Use pelo menos 8 caracteres.")
+    if len(password) > 200:
+        raise ValueError("Senha longa demais.")
+    salt = secrets.token_bytes(16)
+    write_auth_config({
+        "version": 1,
+        "kdf": "pbkdf2-sha256",
+        "iterations": AUTH_ITERATIONS,
+        "salt": salt.hex(),
+        "hash": derive_password_hash(password, salt, AUTH_ITERATIONS),
+        "created": datetime.now().isoformat(timespec="seconds"),
+    })
+
+
+def verify_access_password(password):
+    config = load_auth_config()
+    if not config:
+        return False
+    try:
+        salt = bytes.fromhex(str(config["salt"]))
+        iterations = int(config.get("iterations") or AUTH_ITERATIONS)
+        actual = derive_password_hash(password, salt, iterations)
+        return hmac.compare_digest(actual, str(config.get("hash") or ""))
+    except Exception:
+        return False
+
+
+def purge_sessions():
+    now = time.time()
+    expired = [token for token, expires in SESSIONS.items() if expires <= now]
+    for token in expired:
+        SESSIONS.pop(token, None)
+
+
+def create_session():
+    purge_sessions()
+    token = secrets.token_urlsafe(32)
+    SESSIONS[token] = time.time() + SESSION_TTL_SECONDS
+    return token
+
+
+def session_is_valid(token):
+    if not token:
+        return False
+    purge_sessions()
+    expires = SESSIONS.get(token)
+    if not expires or expires <= time.time():
+        SESSIONS.pop(token, None)
+        return False
+    return True
+
+
+def read_cookie(header, name):
+    if not header:
+        return ""
+    for part in header.split(";"):
+        key, sep, value = part.strip().partition("=")
+        if sep and key == name:
+            return value.strip()
+    return ""
 
 
 def default_personal_state():
@@ -1151,6 +1261,162 @@ footer {
     .viewer-head { flex-wrap: wrap; }
 }
 
+
+/* =========================================================
+   PALMICORP v2.3 // ACCESS CORE + OFFLINE UI + CUSTOM GLYPHS
+   ========================================================= */
+
+.lock-screen {
+    position: fixed;
+    inset: 0;
+    z-index: 20000;
+    display: none;
+    place-items: center;
+    padding: 18px;
+    background:
+        radial-gradient(circle at 50% 32%, rgba(101,232,255,.11), transparent 24%),
+        radial-gradient(circle at 50% 58%, rgba(119,255,157,.06), transparent 32%),
+        linear-gradient(180deg, #020407, #05080c 70%, #020304);
+    overflow: hidden;
+}
+.lock-screen.open { display: grid; }
+.lock-screen::before {
+    content: "";
+    position: absolute;
+    inset: -20%;
+    background:
+        linear-gradient(rgba(101,232,255,.035) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(101,232,255,.025) 1px, transparent 1px);
+    background-size: 34px 34px;
+    transform: perspective(520px) rotateX(58deg) translateY(20%);
+    transform-origin: center 70%;
+    mask-image: linear-gradient(to bottom, transparent 2%, #000 35%, transparent 82%);
+    animation: lockGrid 12s linear infinite;
+}
+@keyframes lockGrid { to { background-position: 0 68px, 68px 0; } }
+
+.lock-shell {
+    position: relative;
+    width: min(500px, 95vw);
+    border: 1px solid rgba(101,232,255,.28);
+    border-radius: 22px;
+    padding: 28px;
+    background: rgba(4,8,12,.92);
+    box-shadow: 0 35px 120px rgba(0,0,0,.62), inset 0 0 70px rgba(101,232,255,.035);
+    backdrop-filter: blur(16px);
+}
+.lock-topline {
+    display: flex;
+    justify-content: space-between;
+    gap: 12px;
+    color: #617180;
+    font-size: 9px;
+    letter-spacing: 1.8px;
+}
+.lock-core {
+    width: 112px;
+    height: 112px;
+    border: 1px solid rgba(101,232,255,.48);
+    border-radius: 50%;
+    margin: 26px auto 20px;
+    display: grid;
+    place-items: center;
+    position: relative;
+    color: #dffaff;
+    font-size: 38px;
+    font-weight: 800;
+    letter-spacing: -2px;
+    box-shadow: 0 0 35px rgba(101,232,255,.10), inset 0 0 28px rgba(101,232,255,.05);
+}
+.lock-core::before, .lock-core::after {
+    content: "";
+    position: absolute;
+    inset: -9px;
+    border-radius: 50%;
+    border: 1px dashed rgba(119,255,157,.34);
+    animation: lockSpin 12s linear infinite;
+}
+.lock-core::after {
+    inset: 12px;
+    border-color: rgba(207,156,255,.24);
+    animation-duration: 8s;
+    animation-direction: reverse;
+}
+@keyframes lockSpin { to { transform: rotate(360deg); } }
+
+.lock-title { text-align:center; font-size:clamp(28px,7vw,44px); letter-spacing:5px; font-weight:800; }
+.lock-sub { text-align:center; margin-top:7px; color:#697786; font-size:9px; letter-spacing:2.2px; }
+.lock-status {
+    margin: 18px 0 12px;
+    min-height: 18px;
+    text-align: center;
+    color: #77ff9d;
+    font-size: 10px;
+    letter-spacing: 1.4px;
+}
+.lock-field { position: relative; }
+.lock-field input {
+    width: 100%;
+    padding: 15px 14px;
+    border-radius: 11px;
+    border: 1px solid #32404c;
+    background: #03070a;
+    color: #f0f7fb;
+    font-family: inherit;
+    letter-spacing: 1px;
+    outline: none;
+}
+.lock-field input:focus { border-color:#65e8ff; box-shadow:0 0 0 3px rgba(101,232,255,.06); }
+.lock-confirm { margin-top:9px; display:none; }
+.lock-confirm.show { display:block; }
+.lock-action {
+    margin-top: 12px;
+    border-color: rgba(101,232,255,.46);
+    background: linear-gradient(135deg, rgba(101,232,255,.12), rgba(119,255,157,.05));
+    letter-spacing: 1.4px;
+}
+.lock-hint { margin-top:13px; text-align:center; color:#586675; font-size:9px; line-height:1.6; }
+.lock-screen.granted .lock-core { border-color:#77ff9d; color:#77ff9d; box-shadow:0 0 45px rgba(119,255,157,.18); }
+.lock-screen.denied .lock-core { border-color:#ff6868; color:#ff8b8b; }
+
+.header-right { display:flex; align-items:center; gap:10px; }
+.lock-mini { width:auto; padding:7px 9px; font-size:9px; letter-spacing:1px; border-color:#26333e; }
+.nav-glyph { color:#65e8ff; margin-right:5px; opacity:.86; }
+
+.connection-badge {
+    position: fixed;
+    left: 14px;
+    bottom: 14px;
+    z-index: 15000;
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    padding: 8px 10px;
+    border: 1px solid rgba(82,255,131,.25);
+    border-radius: 999px;
+    background: rgba(5,9,13,.90);
+    color: #7fffa2;
+    font-size: 9px;
+    letter-spacing: 1px;
+    backdrop-filter: blur(10px);
+}
+.connection-badge::before { content:""; width:6px; height:6px; border-radius:50%; background:#52ff83; box-shadow:0 0 8px rgba(82,255,131,.7); }
+.connection-badge.offline { border-color:rgba(255,104,104,.34); color:#ff8989; }
+.connection-badge.offline::before { background:#ff6868; box-shadow:0 0 8px rgba(255,104,104,.6); }
+
+.security-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(220px,1fr)); gap:10px; margin-top:12px; }
+.security-card { border:1px solid #293540; border-radius:12px; padding:14px; background:#080c11; }
+.security-label { color:#6f7d89; font-size:9px; letter-spacing:1.4px; }
+.security-value { margin-top:7px; color:#e7eef5; font-size:13px; }
+.security-value.good { color:#77ff9d; }
+.security-value.warn { color:#ffbd59; }
+
+@media(max-width:600px) {
+    .lock-shell { padding:22px 16px; }
+    .lock-core { width:96px; height:96px; }
+    .connection-badge { left:8px; bottom:8px; }
+}
+
 /* =========================================================
    PALMICORP // ADVANCED TERMINAL THEME
    ========================================================= */
@@ -1376,6 +1642,21 @@ body::after {
 
 </div>
 
+<div id="lockScreen" class="lock-screen" aria-hidden="true">
+    <div class="lock-shell">
+        <div class="lock-topline"><span>PALMICORP // ACCESS CORE</span><span>PALM-TERM-01</span></div>
+        <div class="lock-core">P</div>
+        <div class="lock-title">PALMICORP</div>
+        <div class="lock-sub" id="lockModeText">AUTHENTICATION REQUIRED</div>
+        <div class="lock-status" id="lockStatus">WAITING FOR CREDENTIALS...</div>
+        <div class="lock-field"><input id="lockPassword" type="password" autocomplete="current-password" placeholder="ACCESS PASSWORD"></div>
+        <div id="lockConfirmWrap" class="lock-field lock-confirm"><input id="lockConfirm" type="password" autocomplete="new-password" placeholder="CONFIRM PASSWORD"></div>
+        <button id="lockAction" class="lock-action" onclick="submitAccess()">UNLOCK TERMINAL</button>
+        <div class="lock-hint" id="lockHint">Sessão local protegida. Auto-lock após 30 minutos sem atividade.</div>
+    </div>
+</div>
+
+<div id="connectionBadge" class="connection-badge">LOCAL LINK ONLINE</div>
 
 <div class="container">
 
@@ -1394,21 +1675,22 @@ body::after {
 
     </div>
 
-    <div class="terminal-id">
-        PALM-TERM-01
+    <div class="header-right">
+        <div class="terminal-id">PALM-TERM-01</div>
+        <button class="lock-mini" onclick="lockTerminal()">LOCK</button>
     </div>
 
 </header>
 
 <div class="module-nav">
-    <button class="active" data-module="home" onclick="showModule('home', this)">HOME</button>
-    <button data-module="art" onclick="showModule('art', this)">NYVIK ART</button>
-    <button data-module="etec" onclick="showModule('etec', this)">ETEC STUDY</button>
-    <button data-module="ecommerce" onclick="showModule('ecommerce', this)">E-COMMERCE</button>
-    <button data-module="vault" onclick="showModule('vault', this)">VAULT</button>
-    <button data-module="notes" onclick="showModule('notes', this)">NOTES</button>
-    <button data-module="calendar" onclick="showModule('calendar', this)">CALENDAR</button>
-    <button data-module="system" onclick="showModule('system', this)">SYSTEM</button>
+    <button class="active" data-module="home" onclick="showModule('home', this)"><span class="nav-glyph">⌂</span>HOME</button>
+    <button data-module="art" onclick="showModule('art', this)"><span class="nav-glyph">✦</span>NYVIK ART</button>
+    <button data-module="etec" onclick="showModule('etec', this)"><span class="nav-glyph">▦</span>ETEC STUDY</button>
+    <button data-module="ecommerce" onclick="showModule('ecommerce', this)"><span class="nav-glyph">◇</span>E-COMMERCE</button>
+    <button data-module="vault" onclick="showModule('vault', this)"><span class="nav-glyph">⬡</span>VAULT</button>
+    <button data-module="notes" onclick="showModule('notes', this)"><span class="nav-glyph">✎</span>NOTES</button>
+    <button data-module="calendar" onclick="showModule('calendar', this)"><span class="nav-glyph">◫</span>CALENDAR</button>
+    <button data-module="system" onclick="showModule('system', this)"><span class="nav-glyph">⚙</span>SYSTEM</button>
 </div>
 
 <div id="module-home" class="module-page active">
@@ -1846,7 +2128,23 @@ body::after {
 </div>
 
 <div id="module-vault" class="module-page">
-    <div class="module-placeholder"><strong>VAULT CORE</strong><span>Password Vault + File Vault entram aqui na próxima etapa, com segurança de verdade.</span></div>
+    <div class="nyvik-hero" style="border-color:rgba(119,255,157,.26);background:radial-gradient(circle at 82% 18%,rgba(119,255,157,.12),transparent 35%),#07100c">
+        <div>
+            <div class="nyvik-kicker" style="color:#77ff9d">PALMICORP // SECURE STORAGE FOUNDATION</div>
+            <div class="nyvik-title">VAULT <span style="color:#77ff9d">CORE</span></div>
+            <div class="nyvik-sub">ACCESS CONTROL ONLINE // ENCRYPTED STORAGE COMES NEXT</div>
+        </div>
+    </div>
+    <div class="security-grid">
+        <div class="security-card"><div class="security-label">ACCESS SESSION</div><div class="security-value good">AUTHENTICATED</div></div>
+        <div class="security-card"><div class="security-label">PASSWORD VAULT</div><div class="security-value warn">NOT STORING SECRETS YET</div></div>
+        <div class="security-card"><div class="security-label">FILE VAULT</div><div class="security-value warn">ENCRYPTION PENDING</div></div>
+    </div>
+    <div class="section studio-card">
+        <h3>SECURITY FOUNDATION</h3>
+        <p>A tela de bloqueio agora protege as APIs pessoais, PDFs, desenhos, notas, tarefas e uploads com uma sessão autenticada. Senhas e arquivos sensíveis ainda não são armazenados aqui até a camada de criptografia ficar pronta.</p>
+        <button onclick="lockTerminal()">LOCK PALMICORP NOW</button>
+    </div>
 </div>
 
 <div id="module-notes" class="module-page">
@@ -1934,9 +2232,19 @@ body::after {
         </div>
     </div>
     <div class="section studio-card">
+        <h3>ACCESS / OFFLINE CORE</h3>
+        <div class="security-grid">
+            <div class="security-card"><div class="security-label">AUTH STATUS</div><div id="securityAuthState" class="security-value good">AUTHENTICATED</div></div>
+            <div class="security-card"><div class="security-label">AUTO LOCK</div><div class="security-value">30 MIN IDLE</div></div>
+            <div class="security-card"><div class="security-label">SERVER SESSION</div><div class="security-value">8 HOURS MAX</div></div>
+            <div class="security-card"><div class="security-label">TRANSPORT</div><div class="security-value warn">LOCAL HTTP</div></div>
+        </div>
+        <p style="margin-top:12px">A autenticação protege os dados do painel, mas a rede ainda usa HTTP. Não exponha a porta 8080 diretamente à internet; HTTPS entra antes do Password Vault.</p>
+    </div>
+    <div class="section studio-card">
         <h3>PALMICORP VERSIONING</h3>
-        <div class="big" style="color:#65e8ff">v2.2.0-alpha</div>
-        <div class="small">NYVIK ART // E-COMMERCE LAB // NOTES // CALENDAR // ALERT CENTER</div>
+        <div class="big" style="color:#65e8ff">v2.3.0-alpha</div>
+        <div class="small">ACCESS CORE // CINEMATIC LOCK // OFFLINE UI // CUSTOM GLYPHS // PERSONAL OS</div>
     </div>
 </div>
 
@@ -1957,7 +2265,7 @@ body::after {
 
 PALMICORP TERMINAL SYSTEM
 <br>
-VERSION 2.2.0-alpha // PERSONAL OS EXPANSION
+VERSION 2.3.0-alpha // ACCESS CORE
 
 </footer>
 
@@ -1968,6 +2276,156 @@ VERSION 2.2.0-alpha // PERSONAL OS EXPANSION
 <script>
 
 let personalState = null;
+let palmAuthenticated = false;
+let palmAuthConfigured = false;
+let idleTimer = null;
+const PALM_IDLE_MS = 30 * 60 * 1000;
+const nativeFetch = window.fetch.bind(window);
+
+window.fetch = async (...args) => {
+    const response = await nativeFetch(...args);
+    const target = String(args[0] || '');
+    if (response.status === 401 && !target.startsWith('/api/auth')) {
+        palmAuthenticated = false;
+        showLockScreen('login', 'SESSION EXPIRED // AUTHENTICATE AGAIN');
+    }
+    return response;
+};
+
+function setConnectionState(online, text='') {
+    const badge = document.getElementById('connectionBadge');
+    if (!badge) return;
+    badge.classList.toggle('offline', !online);
+    badge.textContent = text || (online ? 'LOCAL LINK ONLINE' : 'LOCAL LINK OFFLINE');
+}
+
+window.addEventListener('online', () => setConnectionState(true));
+window.addEventListener('offline', () => setConnectionState(false, 'BROWSER NETWORK OFFLINE'));
+
+function showLockScreen(mode='login', message='') {
+    const screen = document.getElementById('lockScreen');
+    const confirmWrap = document.getElementById('lockConfirmWrap');
+    const modeText = document.getElementById('lockModeText');
+    const action = document.getElementById('lockAction');
+    const hint = document.getElementById('lockHint');
+    const status = document.getElementById('lockStatus');
+    screen.classList.remove('granted','denied');
+    screen.classList.add('open');
+    screen.setAttribute('aria-hidden','false');
+    confirmWrap.classList.toggle('show', mode === 'setup');
+    modeText.textContent = mode === 'setup' ? 'FIRST ACCESS // CREATE LOCAL PASSWORD' : 'AUTHENTICATION REQUIRED';
+    action.textContent = mode === 'setup' ? 'CREATE ACCESS KEY' : 'UNLOCK TERMINAL';
+    hint.textContent = mode === 'setup'
+        ? 'Crie uma senha única para a PALMICORP. Não reutilize senha de e-mail, rede social ou banco.'
+        : 'Sessão local protegida. Auto-lock após 30 minutos sem atividade.';
+    status.textContent = message || (mode === 'setup' ? 'ACCESS CORE NOT CONFIGURED' : 'WAITING FOR CREDENTIALS...');
+    screen.dataset.mode = mode;
+    document.getElementById('lockPassword').value = '';
+    document.getElementById('lockConfirm').value = '';
+    setTimeout(() => document.getElementById('lockPassword').focus(), 80);
+}
+
+function hideLockScreen() {
+    const screen = document.getElementById('lockScreen');
+    screen.classList.add('granted');
+    document.getElementById('lockStatus').textContent = 'ACCESS GRANTED // WELCOME BACK';
+    setTimeout(() => {
+        screen.classList.remove('open','granted','denied');
+        screen.setAttribute('aria-hidden','true');
+    }, 620);
+}
+
+function lockDenied(message) {
+    const screen = document.getElementById('lockScreen');
+    screen.classList.remove('granted');
+    screen.classList.add('denied');
+    document.getElementById('lockStatus').textContent = message || 'ACCESS DENIED';
+    setTimeout(() => screen.classList.remove('denied'), 900);
+}
+
+async function checkAccessCore() {
+    try {
+        const response = await nativeFetch('/api/auth/status?t=' + Date.now(), {cache:'no-store'});
+        const data = await response.json();
+        palmAuthConfigured = !!data.configured;
+        palmAuthenticated = !!data.authenticated;
+        setConnectionState(true);
+        if (!palmAuthConfigured) {
+            showLockScreen('setup');
+            return;
+        }
+        if (!palmAuthenticated) {
+            showLockScreen('login');
+            return;
+        }
+        hideLockScreen();
+        startAuthenticatedSession();
+    } catch (error) {
+        setConnectionState(false, 'PALMICORP SERVER UNREACHABLE');
+        showLockScreen('login', 'SERVER UNREACHABLE // CHECK LOCAL LINK');
+    }
+}
+
+async function submitAccess() {
+    const screen = document.getElementById('lockScreen');
+    const mode = screen.dataset.mode || 'login';
+    const password = document.getElementById('lockPassword').value;
+    const confirm = document.getElementById('lockConfirm').value;
+    const status = document.getElementById('lockStatus');
+    if (!password) return lockDenied('ENTER ACCESS PASSWORD');
+    if (mode === 'setup') {
+        if (password.length < 8) return lockDenied('USE AT LEAST 8 CHARACTERS');
+        if (password !== confirm) return lockDenied('PASSWORDS DO NOT MATCH');
+    }
+    status.textContent = mode === 'setup' ? 'GENERATING ACCESS CORE...' : 'VERIFYING CREDENTIALS...';
+    try {
+        const response = await nativeFetch(mode === 'setup' ? '/api/auth/setup' : '/api/auth/login', {
+            method:'POST',
+            headers:{'Content-Type':'application/json'},
+            body:JSON.stringify({password})
+        });
+        const data = await response.json();
+        if (!response.ok) throw new Error(data.error || 'ACCESS DENIED');
+        palmAuthConfigured = true;
+        palmAuthenticated = true;
+        hideLockScreen();
+        startAuthenticatedSession();
+    } catch (error) {
+        lockDenied(error.message || 'ACCESS DENIED');
+    }
+}
+
+async function lockTerminal() {
+    try { await nativeFetch('/api/auth/logout', {method:'POST'}); } catch (_) {}
+    palmAuthenticated = false;
+    clearTimeout(idleTimer);
+    showLockScreen('login', 'TERMINAL LOCKED');
+}
+
+function resetIdleTimer() {
+    if (!palmAuthenticated) return;
+    clearTimeout(idleTimer);
+    idleTimer = setTimeout(() => lockTerminal(), PALM_IDLE_MS);
+}
+
+['pointerdown','keydown','touchstart'].forEach(eventName => {
+    window.addEventListener(eventName, resetIdleTimer, {passive:true});
+});
+
+document.addEventListener('keydown', event => {
+    if (event.key === 'Enter' && document.getElementById('lockScreen').classList.contains('open')) {
+        submitAccess();
+    }
+});
+
+function startAuthenticatedSession() {
+    resetIdleTimer();
+    refreshSystem();
+    refreshPersonal();
+    renderAlerts();
+    const security = document.getElementById('securityAuthState');
+    if (security) security.textContent = 'AUTHENTICATED';
+}
 
 function showModule(name, button) {
     document.querySelectorAll('.module-page').forEach(el => el.classList.remove('active'));
@@ -1975,7 +2433,7 @@ function showModule(name, button) {
     const page = document.getElementById('module-' + name);
     if (page) page.classList.add('active');
     if (button) button.classList.add('active');
-    if (['art','etec','ecommerce','notes','calendar','system'].includes(name)) refreshPersonal();
+    if (['art','etec','ecommerce','vault','notes','calendar','system'].includes(name)) refreshPersonal();
     if (name === 'system') renderAlerts();
 }
 
@@ -2451,6 +2909,7 @@ async function refreshSystem() {
         const data =
             await response.json();
         lastSystemStatus = data;
+        setConnectionState(true);
 
 
         document.getElementById(
@@ -2545,6 +3004,7 @@ async function refreshSystem() {
             "Palmicorp API error",
             error
         );
+        setConnectionState(false, "PALMICORP SERVER UNREACHABLE");
 
     }
 
@@ -2566,13 +3026,17 @@ function bootSequence() {
 
     const messages = [
 
-        "INITIALIZING TERMINAL...",
+        "INITIALIZING PALMICORP CORE...",
 
-        "CONNECTING PALMICORP NETWORK...",
+        "VERIFYING LOCAL NODE...",
 
-        "CHECKING DEVICE...",
+        "MOUNTING PERSONAL WORKSPACE...",
 
-        "SYSTEM ONLINE"
+        "STARTING ACCESS CONTROL...",
+
+        "SYNCING TERMINAL SERVICES...",
+
+        "CORE READY // AUTH GATE ACTIVE"
 
     ];
 
@@ -2610,7 +3074,7 @@ function bootSequence() {
 
             }
 
-        }, 450);
+        }, 330);
 
 }
 
@@ -2635,16 +3099,10 @@ setInterval(
 );
 
 
-refreshSystem();
-
-setInterval(
-    refreshSystem,
-    5000
-);
-
-refreshPersonal();
+setInterval(() => { if (palmAuthenticated) refreshSystem(); }, 5000);
 
 bootSequence();
+setTimeout(checkAccessCore, 2550);
 
 
 </script>
@@ -2662,7 +3120,7 @@ bootSequence();
 
 class Handler(BaseHTTPRequestHandler):
 
-    def send_json(self, data, status=200):
+    def send_json(self, data, status=200, extra_headers=None):
 
         encoded = json.dumps(
             data
@@ -2684,10 +3142,43 @@ class Handler(BaseHTTPRequestHandler):
             "Cache-Control",
             "no-store"
         )
+        self.send_header("X-Content-Type-Options", "nosniff")
+        self.send_header("Referrer-Policy", "no-referrer")
+        if extra_headers:
+            for key, value in extra_headers.items():
+                self.send_header(key, value)
 
         self.end_headers()
 
         self.wfile.write(encoded)
+
+
+    def session_token(self):
+        return read_cookie(self.headers.get("Cookie") or "", "palm_session")
+
+    def authenticated(self):
+        return session_is_valid(self.session_token())
+
+    def require_auth(self):
+        if self.authenticated():
+            return True
+        self.send_json({"error": "authentication required", "auth_required": True}, 401)
+        return False
+
+    def session_cookie(self, token):
+        return (
+            f"palm_session={token}; Path=/; Max-Age={SESSION_TTL_SECONDS}; "
+            "HttpOnly; SameSite=Strict"
+        )
+
+    def clear_session_cookie(self):
+        return "palm_session=; Path=/; Max-Age=0; HttpOnly; SameSite=Strict"
+
+    def read_json_body(self, max_bytes=64 * 1024):
+        length = int(self.headers.get("Content-Length", 0))
+        if length <= 0 or length > max_bytes:
+            raise ValueError("Invalid request size.")
+        return json.loads(self.rfile.read(length).decode("utf-8"))
 
 
     def serve_local_file(self, file):
@@ -2721,6 +3212,8 @@ class Handler(BaseHTTPRequestHandler):
             self.send_header("Accept-Ranges", "bytes")
             self.send_header("Content-Disposition", f'inline; filename="{file.name.replace(chr(34), "")}"')
             self.send_header("Cache-Control", "private, max-age=3600")
+            self.send_header("X-Content-Type-Options", "nosniff")
+            self.send_header("Referrer-Policy", "no-referrer")
             self.send_header("Content-Length", str(end - start + 1))
             if status == 206:
                 self.send_header("Content-Range", f"bytes {start}-{end}/{total}")
@@ -2743,9 +3236,19 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_GET(self):
 
+        if self.path.startswith("/api/auth/status"):
+            self.send_json({
+                "configured": load_auth_config() is not None,
+                "authenticated": self.authenticated(),
+                "session_ttl_seconds": SESSION_TTL_SECONDS,
+            })
+            return
+
         if self.path.startswith(
             "/api/status"
         ):
+            if not self.require_auth():
+                return
 
             update_device_states()
 
@@ -2784,10 +3287,14 @@ class Handler(BaseHTTPRequestHandler):
 
 
         if self.path.startswith("/api/personal"):
+            if not self.require_auth():
+                return
             self.send_json(personal_payload())
             return
 
         if self.path.startswith("/art-file"):
+            if not self.require_auth():
+                return
             try:
                 parsed = urllib.parse.urlparse(self.path)
                 query = urllib.parse.parse_qs(parsed.query)
@@ -2825,6 +3332,9 @@ class Handler(BaseHTTPRequestHandler):
             "Cache-Control",
             "no-store"
         )
+        self.send_header("X-Content-Type-Options", "nosniff")
+        self.send_header("Referrer-Policy", "no-referrer")
+        self.send_header("X-Frame-Options", "DENY")
 
         self.end_headers()
 
@@ -2833,7 +3343,59 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_POST(self):
 
+        if self.path == "/api/auth/setup":
+            try:
+                if load_auth_config() is not None:
+                    self.send_json({"error": "Access core already configured."}, 409)
+                    return
+                payload = self.read_json_body()
+                password = str(payload.get("password") or "")
+                configure_access_password(password)
+                token = create_session()
+                self.send_json(
+                    {"ok": True, "configured": True, "authenticated": True},
+                    200,
+                    {"Set-Cookie": self.session_cookie(token)},
+                )
+            except Exception as error:
+                self.send_json({"error": str(error)}, 400)
+            return
+
+        if self.path == "/api/auth/login":
+            try:
+                if load_auth_config() is None:
+                    self.send_json({"error": "Access core is not configured."}, 409)
+                    return
+                payload = self.read_json_body()
+                password = str(payload.get("password") or "")
+                if not verify_access_password(password):
+                    time.sleep(0.35)
+                    self.send_json({"error": "ACCESS DENIED"}, 401)
+                    return
+                token = create_session()
+                self.send_json(
+                    {"ok": True, "authenticated": True},
+                    200,
+                    {"Set-Cookie": self.session_cookie(token)},
+                )
+            except Exception as error:
+                self.send_json({"error": str(error)}, 400)
+            return
+
+        if self.path == "/api/auth/logout":
+            token = self.session_token()
+            if token:
+                SESSIONS.pop(token, None)
+            self.send_json(
+                {"ok": True},
+                200,
+                {"Set-Cookie": self.clear_session_cookie()},
+            )
+            return
+
         if self.path == "/api/personal":
+            if not self.require_auth():
+                return
             try:
                 length = int(self.headers.get("Content-Length", 0))
                 payload = json.loads(self.rfile.read(length).decode("utf-8"))
@@ -2917,6 +3479,8 @@ class Handler(BaseHTTPRequestHandler):
             return
 
         if self.path.startswith("/api/art/upload"):
+            if not self.require_auth():
+                return
             temp = None
             try:
                 parsed = urllib.parse.urlparse(self.path)
@@ -3099,7 +3663,7 @@ print(
 print()
 
 print(
-    "PALMICORP TERMINAL v1.0"
+    "PALMICORP TERMINAL v2.3.0-alpha"
 )
 
 print("=" * 42)
