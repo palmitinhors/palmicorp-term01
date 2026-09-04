@@ -1,6 +1,5 @@
 from http.server import ThreadingHTTPServer, BaseHTTPRequestHandler
 from datetime import datetime
-import base64
 import json
 import mimetypes
 import os
@@ -47,6 +46,9 @@ def default_personal_state():
         "study_log": [],
         "art_last_day": None,
         "study_last_day": None,
+        "ecommerce_days": 0,
+        "ecommerce_last_day": None,
+        "ecommerce_log": [],
     }
 
 
@@ -828,6 +830,203 @@ footer {
 }
 .module-toast.show { opacity: 1; transform: translateY(0); }
 
+
+/* =========================================================
+   NYVIK VIEWER + E-COMMERCE LAB
+   ========================================================= */
+
+.library-item button {
+    width: auto;
+    padding: 7px 10px;
+    font-size: 10px;
+    border-color: rgba(207,156,255,.32);
+}
+
+.library-file-main {
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+}
+
+.library-file-name {
+    color: #d7dee7;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.viewer-modal {
+    position: fixed;
+    inset: 0;
+    z-index: 12000;
+    display: none;
+    background: rgba(1,3,6,.92);
+    backdrop-filter: blur(14px);
+    padding: 18px;
+}
+
+.viewer-modal.open { display: flex; }
+
+.viewer-shell {
+    width: min(1180px, 100%);
+    height: min(92vh, 920px);
+    margin: auto;
+    display: flex;
+    flex-direction: column;
+    border: 1px solid rgba(207,156,255,.32);
+    border-radius: 18px;
+    overflow: hidden;
+    background: #06090d;
+    box-shadow: 0 30px 100px rgba(0,0,0,.55);
+}
+
+.viewer-head {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 11px 13px;
+    border-bottom: 1px solid #222c36;
+    background: rgba(9,13,19,.96);
+}
+
+.viewer-title {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    color: #d9e2ec;
+    font-size: 11px;
+    letter-spacing: 1px;
+}
+
+.viewer-head button,
+.viewer-head a {
+    width: auto;
+    padding: 8px 11px;
+    color: #c9d3dd;
+    text-decoration: none;
+    border: 1px solid #303945;
+    border-radius: 8px;
+    background: #0c1118;
+    font: inherit;
+    font-size: 10px;
+    cursor: pointer;
+}
+
+.viewer-body {
+    flex: 1;
+    min-height: 0;
+    display: grid;
+    place-items: center;
+    background:
+        radial-gradient(circle at center, rgba(207,156,255,.06), transparent 45%),
+        #030507;
+}
+
+.viewer-body img {
+    max-width: 100%;
+    max-height: 100%;
+    object-fit: contain;
+}
+
+.viewer-body iframe {
+    width: 100%;
+    height: 100%;
+    border: 0;
+    background: #fff;
+}
+
+.art-tile {
+    cursor: zoom-in;
+}
+
+.ecom-hero {
+    position: relative;
+    overflow: hidden;
+    min-height: 230px;
+    display: flex;
+    align-items: flex-end;
+    padding: 28px;
+    border: 1px solid rgba(255,182,72,.30);
+    border-radius: 18px;
+    background:
+        radial-gradient(circle at 82% 18%, rgba(255,178,62,.20), transparent 32%),
+        radial-gradient(circle at 15% 90%, rgba(82,255,131,.08), transparent 34%),
+        linear-gradient(135deg, rgba(20,14,7,.98), rgba(6,10,12,.98));
+    box-shadow: inset 0 0 80px rgba(255,177,65,.035);
+}
+
+.ecom-hero::after {
+    content: "COMMERCE";
+    position: absolute;
+    right: -20px;
+    top: -16px;
+    font-size: clamp(54px, 12vw, 128px);
+    font-weight: 900;
+    letter-spacing: -7px;
+    color: rgba(255,255,255,.022);
+    pointer-events: none;
+}
+
+.ecom-kicker {
+    color: #ffbd59;
+    font-size: 10px;
+    letter-spacing: 3px;
+    margin-bottom: 8px;
+}
+
+.ecom-title {
+    font-size: clamp(34px, 7vw, 68px);
+    line-height: .95;
+    letter-spacing: 2px;
+    font-weight: 800;
+}
+
+.ecom-title span { color: #ffbd59; }
+
+.ecom-sub {
+    color: #8f887d;
+    margin-top: 12px;
+    font-size: 11px;
+    letter-spacing: 1.5px;
+}
+
+.ecom-card {
+    border-color: rgba(255,189,89,.20);
+    background:
+        linear-gradient(135deg, rgba(255,189,89,.035), transparent 45%),
+        rgba(8,12,17,.94);
+}
+
+.ecom-select {
+    width: 100%;
+    margin: 8px 0 10px;
+    padding: 11px;
+    border-radius: 10px;
+    border: 1px solid #39414a;
+    background: #070a0e;
+    color: #e7edf4;
+    font-family: inherit;
+}
+
+.ecom-save {
+    border-color: rgba(255,189,89,.45);
+    background: linear-gradient(135deg, rgba(255,189,89,.12), rgba(82,255,131,.04));
+}
+
+.ecom-log .log-entry {
+    border-left-color: #ffbd59;
+    background: rgba(255,189,89,.035);
+}
+
+@media(max-width: 600px) {
+    .viewer-modal { padding: 6px; }
+    .viewer-shell { height: 96vh; border-radius: 12px; }
+    .viewer-head { flex-wrap: wrap; }
+}
+
 /* =========================================================
    PALMICORP // ADVANCED TERMINAL THEME
    ========================================================= */
@@ -1081,6 +1280,7 @@ body::after {
     <button class="active" data-module="home" onclick="showModule('home', this)">HOME</button>
     <button data-module="art" onclick="showModule('art', this)">NYVIK ART</button>
     <button data-module="etec" onclick="showModule('etec', this)">ETEC STUDY</button>
+    <button data-module="ecommerce" onclick="showModule('ecommerce', this)">E-COMMERCE</button>
     <button data-module="vault" onclick="showModule('vault', this)">VAULT</button>
     <button data-module="notes" onclick="showModule('notes', this)">NOTES</button>
     <button data-module="calendar" onclick="showModule('calendar', this)">CALENDAR</button>
@@ -1417,6 +1617,49 @@ body::after {
 
 </div>
 
+<div id="module-ecommerce" class="module-page">
+
+    <div class="ecom-hero">
+        <div>
+            <div class="ecom-kicker">PALMICORP // COMMERCE LEARNING LAB</div>
+            <div class="ecom-title">E-COMMERCE <span>LAB</span></div>
+            <div class="ecom-sub">LEARN // DOCUMENT // TEST // IMPROVE</div>
+        </div>
+    </div>
+
+    <div class="stat-grid">
+        <div class="stat-box ecom-card"><div class="card-title">DAYS LEARNING</div><div class="stat-value" id="ecommerceDays">0</div></div>
+        <div class="stat-box ecom-card"><div class="card-title">LESSONS ARCHIVED</div><div class="stat-value" id="ecommerceLessonCount">0</div></div>
+        <div class="stat-box ecom-card"><div class="card-title">MODE</div><div class="stat-value" style="font-size:18px;color:#ffbd59">BUILD & LEARN</div></div>
+    </div>
+
+    <div class="section studio-grid">
+        <div class="studio-card ecom-card">
+            <h3>COURSE LEARNING LOG</h3>
+            <p>Registre o que você aprendeu na aula de hoje. Organize por tema para encontrar depois.</p>
+            <select id="ecommerceCategory" class="ecom-select">
+                <option value="Produto">Produto</option>
+                <option value="Oferta">Oferta</option>
+                <option value="Loja">Loja</option>
+                <option value="Criativos">Criativos</option>
+                <option value="Tráfego">Tráfego</option>
+                <option value="Métricas">Métricas</option>
+                <option value="Operação">Operação</option>
+                <option value="Outro">Outro</option>
+            </select>
+            <textarea id="ecommerceNote" class="studio-textarea" placeholder="Ex.: hoje aprendi como estruturar uma página de produto e quais métricas acompanhar..."></textarea>
+            <button class="ecom-save" onclick="saveEcommerceNote()">ARQUIVAR APRENDIZADO</button>
+        </div>
+
+        <div class="studio-card ecom-card">
+            <h3>LEARNING ARCHIVE</h3>
+            <p>Seu histórico de estudo do curso, em ordem do mais recente.</p>
+            <div class="log-list ecom-log" id="ecommerceLog"></div>
+        </div>
+    </div>
+
+</div>
+
 <div id="module-vault" class="module-page">
     <div class="module-placeholder"><strong>VAULT CORE</strong><span>Password Vault + File Vault entram aqui na próxima etapa, com segurança de verdade.</span></div>
 </div>
@@ -1433,13 +1676,24 @@ body::after {
     <div class="module-placeholder"><strong>PALMICORP SYSTEM</strong><span>Alert Center, Offline UI, PWA, ícones, versioning e controles do servidor.</span></div>
 </div>
 
+<div id="artViewer" class="viewer-modal" onclick="viewerBackdrop(event)">
+    <div class="viewer-shell">
+        <div class="viewer-head">
+            <div id="viewerTitle" class="viewer-title">NYVIK ART VIEWER</div>
+            <a id="viewerOpenExternal" target="_blank" rel="noopener">ABRIR EM NOVA ABA</a>
+            <button onclick="closeArtViewer()">FECHAR</button>
+        </div>
+        <div id="viewerBody" class="viewer-body"></div>
+    </div>
+</div>
+
 <div id="moduleToast" class="module-toast">PALMICORP</div>
 
 <footer>
 
 PALMICORP TERMINAL SYSTEM
 <br>
-VERSION 2.0.0-alpha // NYVIK ART
+VERSION 2.1.0-alpha // NYVIK ART + E-COMMERCE LAB
 
 </footer>
 
@@ -1457,7 +1711,7 @@ function showModule(name, button) {
     const page = document.getElementById('module-' + name);
     if (page) page.classList.add('active');
     if (button) button.classList.add('active');
-    if (name === 'art' || name === 'etec') refreshPersonal();
+    if (name === 'art' || name === 'etec' || name === 'ecommerce') refreshPersonal();
 }
 
 function toast(message) {
@@ -1476,6 +1730,13 @@ function prettySize(bytes) {
     return value.toFixed(i ? 1 : 0) + ' ' + units[i];
 }
 
+
+function escapeHtml(value) {
+    return String(value ?? '').replace(/[&<>'"]/g, ch => ({
+        '&':'&amp;', '<':'&lt;', '>':'&gt;', "'":'&#39;', '"':'&quot;'
+    })[ch]);
+}
+
 async function refreshPersonal() {
     try {
         const response = await fetch('/api/personal?t=' + Date.now());
@@ -1486,20 +1747,27 @@ async function refreshPersonal() {
         document.getElementById('artBookCount').textContent = (personalState.books || []).length;
 
         document.getElementById('artBooks').innerHTML = (personalState.books || []).map(file =>
-            `<div class="library-item"><a target="_blank" href="/art-file?kind=book&name=${encodeURIComponent(file.name)}">${file.name}</a><small>${prettySize(file.size)}</small></div>`
+            `<div class="library-item"><div class="library-file-main"><span class="library-file-name">${escapeHtml(file.name)}</span><small>${prettySize(file.size)}</small></div><button type="button" onclick='openArtBook(${JSON.stringify(file.name)})'>LER PDF</button></div>`
         ).join('') || '<div class="small">Nenhum PDF ainda.</div>';
 
         document.getElementById('artGallery').innerHTML = (personalState.drawings || []).map(file =>
-            `<a class="art-tile" target="_blank" href="/art-file?kind=drawing&name=${encodeURIComponent(file.name)}"><img loading="lazy" src="/art-file?kind=drawing&name=${encodeURIComponent(file.name)}"><span>${file.name}</span></a>`
+            `<div class="art-tile" onclick='openArtDrawing(${JSON.stringify(file.name)})'><img loading="lazy" src="/art-file?kind=drawing&name=${encodeURIComponent(file.name)}"><span>${escapeHtml(file.name)}</span></div>`
         ).join('') || '<div class="small">Sua galeria ainda está vazia.</div>';
 
         document.getElementById('artLog').innerHTML = (personalState.art_log || []).slice().reverse().slice(0,8).map(item =>
-            `<div class="log-entry"><strong>${item.date}</strong><br>${item.text}</div>`
+            `<div class="log-entry"><strong>${escapeHtml(item.date)}</strong><br>${escapeHtml(item.text)}</div>`
         ).join('');
 
         document.getElementById('studyLog').innerHTML = (personalState.study_log || []).slice().reverse().slice(0,8).map(item =>
-            `<div class="log-entry" style="border-color:#65e8ff"><strong>${item.date}</strong><br>${item.text}</div>`
+            `<div class="log-entry" style="border-color:#65e8ff"><strong>${escapeHtml(item.date)}</strong><br>${escapeHtml(item.text)}</div>`
         ).join('');
+
+
+        document.getElementById('ecommerceDays').textContent = personalState.ecommerce_days || 0;
+        document.getElementById('ecommerceLessonCount').textContent = (personalState.ecommerce_log || []).length;
+        document.getElementById('ecommerceLog').innerHTML = (personalState.ecommerce_log || []).slice().reverse().slice(0,30).map(item =>
+            `<div class="log-entry"><strong>${escapeHtml(item.date)} // ${escapeHtml(item.category || 'Geral')}</strong><br>${escapeHtml(item.text)}</div>`
+        ).join('') || '<div class="small">Nenhuma aula arquivada ainda.</div>';
     } catch (error) {
         console.log('Personal API error', error);
     }
@@ -1543,29 +1811,88 @@ async function saveStudyNote() {
     catch (e) { toast(e.message); }
 }
 
-function uploadArtFile(kind, input) {
+
+async function saveEcommerceNote() {
+    const input = document.getElementById('ecommerceNote');
+    const category = document.getElementById('ecommerceCategory').value || 'Geral';
+    const value = input.value.trim();
+    if (!value) return toast('Escreve o que você aprendeu primeiro.');
+    try {
+        const response = await fetch('/api/personal', {
+            method:'POST',
+            headers:{'Content-Type':'application/json'},
+            body:JSON.stringify({action:'ecommerce_note', text:value, category})
+        });
+        const data = await response.json();
+        if (!response.ok) throw new Error(data.error || 'Falha');
+        input.value = '';
+        await refreshPersonal();
+        toast('E-COMMERCE LAB // aprendizado arquivado');
+    } catch (e) { toast(e.message || 'Falha ao salvar'); }
+}
+
+function openArtBook(name) {
+    const url = '/art-file?kind=book&name=' + encodeURIComponent(name);
+    openArtViewer('pdf', name, url);
+}
+
+function openArtDrawing(name) {
+    const url = '/art-file?kind=drawing&name=' + encodeURIComponent(name);
+    openArtViewer('image', name, url);
+}
+
+function openArtViewer(type, name, url) {
+    const modal = document.getElementById('artViewer');
+    const body = document.getElementById('viewerBody');
+    document.getElementById('viewerTitle').textContent = name;
+    document.getElementById('viewerOpenExternal').href = url;
+    body.innerHTML = type === 'pdf'
+        ? `<iframe title="${escapeHtml(name)}" src="${url}"></iframe>`
+        : `<img alt="${escapeHtml(name)}" src="${url}">`;
+    modal.classList.add('open');
+    document.body.style.overflow = 'hidden';
+}
+
+function closeArtViewer() {
+    const modal = document.getElementById('artViewer');
+    modal.classList.remove('open');
+    document.getElementById('viewerBody').innerHTML = '';
+    document.body.style.overflow = '';
+}
+
+function viewerBackdrop(event) {
+    if (event.target.id === 'artViewer') closeArtViewer();
+}
+
+window.addEventListener('keydown', event => {
+    if (event.key === 'Escape') closeArtViewer();
+});
+
+async function uploadArtFile(kind, input) {
     const file = input.files && input.files[0];
     if (!file) return;
-    const reader = new FileReader();
-    toast('Enviando para o A02...');
-    reader.onload = async () => {
-        try {
-            const response = await fetch('/api/art/upload', {
-                method:'POST',
-                headers:{'Content-Type':'application/json'},
-                body:JSON.stringify({kind, name:file.name, data:reader.result})
-            });
-            const result = await response.json();
-            if (!response.ok) throw new Error(result.error || 'Upload falhou');
-            input.value='';
-            await refreshPersonal();
-            toast(kind === 'book' ? 'PDF salvo na NYVIK LIBRARY' : 'Desenho salvo na NYVIK GALLERY');
-        } catch (error) {
-            toast(error.message || 'Falha no upload');
-        }
-    };
-    reader.readAsDataURL(file);
+
+    toast(`Enviando ${prettySize(file.size)} para o A02...`);
+
+    try {
+        const url = '/api/art/upload?kind=' + encodeURIComponent(kind) + '&name=' + encodeURIComponent(file.name);
+        const response = await fetch(url, {
+            method: 'POST',
+            headers: {
+                'Content-Type': file.type || 'application/octet-stream'
+            },
+            body: file
+        });
+        const result = await response.json();
+        if (!response.ok) throw new Error(result.error || 'Upload falhou');
+        input.value = '';
+        await refreshPersonal();
+        toast(kind === 'book' ? 'PDF salvo na NYVIK LIBRARY' : 'Desenho salvo na NYVIK GALLERY');
+    } catch (error) {
+        toast(error.message || 'Falha no upload');
+    }
 }
+
 
 
 function openMegaVault() {
@@ -1934,6 +2261,57 @@ class Handler(BaseHTTPRequestHandler):
         self.wfile.write(encoded)
 
 
+    def serve_local_file(self, file):
+        try:
+            total = file.stat().st_size
+            mime = mimetypes.guess_type(file.name)[0] or "application/octet-stream"
+            start = 0
+            end = total - 1
+            status = 200
+            range_header = self.headers.get("Range") or ""
+
+            if range_header.startswith("bytes="):
+                spec = range_header[6:].split(",", 1)[0].strip()
+                left, _, right = spec.partition("-")
+                if left:
+                    start = max(0, int(left))
+                    end = min(total - 1, int(right)) if right else total - 1
+                elif right:
+                    length = min(total, int(right))
+                    start = total - length
+                    end = total - 1
+                if start > end or start >= total:
+                    self.send_response(416)
+                    self.send_header("Content-Range", f"bytes */{total}")
+                    self.end_headers()
+                    return
+                status = 206
+
+            self.send_response(status)
+            self.send_header("Content-Type", mime)
+            self.send_header("Accept-Ranges", "bytes")
+            self.send_header("Content-Disposition", f'inline; filename="{file.name.replace(chr(34), "")}"')
+            self.send_header("Cache-Control", "private, max-age=3600")
+            self.send_header("Content-Length", str(end - start + 1))
+            if status == 206:
+                self.send_header("Content-Range", f"bytes {start}-{end}/{total}")
+            self.end_headers()
+
+            remaining = end - start + 1
+            with file.open("rb") as handle:
+                handle.seek(start)
+                while remaining > 0:
+                    chunk = handle.read(min(256 * 1024, remaining))
+                    if not chunk:
+                        break
+                    self.wfile.write(chunk)
+                    remaining -= len(chunk)
+        except (BrokenPipeError, ConnectionResetError):
+            pass
+        except Exception:
+            self.send_error(404)
+
+
     def do_GET(self):
 
         if self.path.startswith(
@@ -1994,14 +2372,7 @@ class Handler(BaseHTTPRequestHandler):
                 if not file.is_file():
                     self.send_error(404)
                     return
-                content = file.read_bytes()
-                mime = mimetypes.guess_type(file.name)[0] or "application/octet-stream"
-                self.send_response(200)
-                self.send_header("Content-Type", mime)
-                self.send_header("Content-Length", len(content))
-                self.send_header("Cache-Control", "private, max-age=3600")
-                self.end_headers()
-                self.wfile.write(content)
+                self.serve_local_file(file)
             except Exception:
                 self.send_error(404)
             return
@@ -2038,7 +2409,8 @@ class Handler(BaseHTTPRequestHandler):
                 length = int(self.headers.get("Content-Length", 0))
                 payload = json.loads(self.rfile.read(length).decode("utf-8"))
                 action = str(payload.get("action") or "")
-                note = str(payload.get("text") or "").strip()[:1200]
+                note = str(payload.get("text") or "").strip()[:4000]
+                category = str(payload.get("category") or "Geral").strip()[:60]
                 state = load_personal_state()
                 today = datetime.now().strftime("%d/%m/%Y")
                 iso_today = datetime.now().strftime("%Y-%m-%d")
@@ -2057,6 +2429,12 @@ class Handler(BaseHTTPRequestHandler):
                 elif action == "study_note" and note:
                     state.setdefault("study_log", []).append({"date": today, "text": note})
                     state["study_log"] = state["study_log"][-100:]
+                elif action == "ecommerce_note" and note:
+                    if state.get("ecommerce_last_day") != iso_today:
+                        state["ecommerce_days"] = int(state.get("ecommerce_days") or 0) + 1
+                        state["ecommerce_last_day"] = iso_today
+                    state.setdefault("ecommerce_log", []).append({"date": today, "category": category, "text": note})
+                    state["ecommerce_log"] = state["ecommerce_log"][-300:]
                 else:
                     self.send_json({"error": "Ação inválida."}, 400)
                     return
@@ -2067,40 +2445,63 @@ class Handler(BaseHTTPRequestHandler):
                 self.send_json({"error": str(error)}, 400)
             return
 
-        if self.path == "/api/art/upload":
+        if self.path.startswith("/api/art/upload"):
+            temp = None
             try:
-                length = int(self.headers.get("Content-Length", 0))
-                if length <= 0 or length > 48 * 1024 * 1024:
-                    self.send_json({"error": "Arquivo muito grande."}, 413)
-                    return
-                payload = json.loads(self.rfile.read(length).decode("utf-8"))
-                kind = str(payload.get("kind") or "")
-                name = safe_filename(payload.get("name"))
-                data_url = str(payload.get("data") or "")
+                parsed = urllib.parse.urlparse(self.path)
+                query = urllib.parse.parse_qs(parsed.query)
+                kind = (query.get("kind") or [""])[0]
+                name = safe_filename((query.get("name") or [""])[0])
                 folder = ART_BOOKS_DIR if kind == "book" else ART_DRAWINGS_DIR if kind == "drawing" else None
-                if folder is None or "," not in data_url:
-                    self.send_json({"error": "Upload inválido."}, 400)
+                if folder is None:
+                    self.send_json({"error": "Tipo de upload inválido."}, 400)
                     return
-                header, encoded_data = data_url.split(",", 1)
-                mime = header[5:].split(";", 1)[0] if header.startswith("data:") else ""
-                allowed = {
-                    "book": {"application/pdf"},
-                    "drawing": {"image/jpeg", "image/png", "image/webp", "image/gif"},
+
+                length = int(self.headers.get("Content-Length", 0))
+                max_bytes = 256 * 1024 * 1024
+                if length <= 0:
+                    self.send_json({"error": "Arquivo vazio ou tamanho desconhecido."}, 400)
+                    return
+                if length > max_bytes:
+                    self.send_json({"error": "Arquivo pode ter no máximo 256 MB."}, 413)
+                    return
+
+                mime = (self.headers.get("Content-Type") or "").split(";", 1)[0].strip().lower()
+                suffix = Path(name).suffix.lower()
+                allowed_mime = {
+                    "book": {"application/pdf", "application/octet-stream"},
+                    "drawing": {"image/jpeg", "image/png", "image/webp", "image/gif", "application/octet-stream"},
                 }
-                if mime not in allowed[kind]:
+                allowed_ext = {
+                    "book": {".pdf"},
+                    "drawing": {".jpg", ".jpeg", ".png", ".webp", ".gif"},
+                }
+                if suffix not in allowed_ext[kind] or mime not in allowed_mime[kind]:
                     self.send_json({"error": "Tipo de arquivo não permitido."}, 400)
                     return
-                raw = base64.b64decode(encoded_data, validate=True)
-                if len(raw) > 32 * 1024 * 1024:
-                    self.send_json({"error": "Arquivo pode ter no máximo 32 MB."}, 413)
-                    return
+
                 target = folder / name
                 if target.exists():
-                    stem, suffix = target.stem, target.suffix
-                    target = folder / f"{stem}-{int(time.time())}{suffix}"
-                target.write_bytes(raw)
-                self.send_json({"ok": True, "name": target.name})
+                    target = folder / f"{target.stem}-{int(time.time())}{target.suffix}"
+                temp = target.with_name(target.name + ".uploading")
+
+                remaining = length
+                with temp.open("wb") as handle:
+                    while remaining > 0:
+                        chunk = self.rfile.read(min(256 * 1024, remaining))
+                        if not chunk:
+                            raise ValueError("Upload interrompido antes do fim.")
+                        handle.write(chunk)
+                        remaining -= len(chunk)
+                temp.replace(target)
+                temp = None
+                self.send_json({"ok": True, "name": target.name, "size": target.stat().st_size})
             except Exception as error:
+                try:
+                    if temp and temp.exists():
+                        temp.unlink()
+                except Exception:
+                    pass
                 self.send_json({"error": str(error)}, 400)
             return
 
