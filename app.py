@@ -30,6 +30,8 @@ MEGAVAULT_URL = "http://127.0.0.1:5173"
 HEARTBEAT_TIMEOUT = 30
 
 START_TIME = time.time()
+INTERNET_CHECK_CACHE = {"status": "UNKNOWN", "checked": 0.0}
+INTERNET_CHECK_TTL = 20
 
 BASE_DIR = Path(__file__).resolve().parent
 DATA_DIR = BASE_DIR / "data"
@@ -267,6 +269,26 @@ def get_uptime():
     secs = seconds % 60
 
     return f"{hours:02}:{minutes:02}:{secs:02}"
+
+
+def internet_status():
+    now = time.time()
+    if now - float(INTERNET_CHECK_CACHE.get("checked") or 0) < INTERNET_CHECK_TTL:
+        return INTERNET_CHECK_CACHE.get("status") or "UNKNOWN"
+
+    status = "OFFLINE"
+    for host in (("1.1.1.1", 53), ("8.8.8.8", 53)):
+        try:
+            connection = socket.create_connection(host, timeout=1.0)
+            connection.close()
+            status = "ONLINE"
+            break
+        except Exception:
+            continue
+
+    INTERNET_CHECK_CACHE["status"] = status
+    INTERNET_CHECK_CACHE["checked"] = now
+    return status
 
 
 def megavault_status():
@@ -1417,6 +1439,27 @@ footer {
     .connection-badge { left:8px; bottom:8px; }
 }
 
+
+/* =========================================================
+   PALMICORP v2.4 // RESILIENCE CORE
+   ========================================================= */
+.resilience-banner {
+    display:none; margin:0 0 14px; padding:11px 13px; border-radius:11px;
+    border:1px solid rgba(255,189,89,.38); background:rgba(255,189,89,.055);
+    color:#ffd18a; font-size:10px; letter-spacing:1.2px; line-height:1.5;
+}
+.resilience-banner.show { display:block; }
+.resilience-banner.danger { border-color:rgba(255,104,104,.42); background:rgba(255,104,104,.05); color:#ff9c9c; }
+.resilience-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(170px,1fr)); gap:9px; margin-top:12px; }
+.resilience-card { border:1px solid #29343e; border-radius:11px; padding:13px; background:#080c11; }
+.resilience-label { color:#6f7b87; font-size:9px; letter-spacing:1.3px; }
+.resilience-value { margin-top:7px; font-size:13px; color:#e6edf3; }
+.resilience-value.good { color:#77ff9d; }
+.resilience-value.warn { color:#ffbd59; }
+.resilience-value.bad { color:#ff7d7d; }
+.resilience-note { color:#697681; font-size:9px; line-height:1.45; margin-top:5px; }
+.snapshot-badge { display:inline-block; margin-left:6px; padding:2px 5px; border:1px solid rgba(255,189,89,.35); border-radius:999px; color:#ffbd59; font-size:7px; vertical-align:middle; }
+
 /* =========================================================
    PALMICORP // ADVANCED TERMINAL THEME
    ========================================================= */
@@ -1694,6 +1737,7 @@ body::after {
 </div>
 
 <div id="module-home" class="module-page active">
+<div id="resilienceBanner" class="resilience-banner">LOCAL RESILIENCE MODE</div>
 
 <div class="hero-terminal">
     <div class="hero-clock" id="brasiliaClock">--:--:--</div>
@@ -2242,9 +2286,19 @@ body::after {
         <p style="margin-top:12px">A autenticação protege os dados do painel, mas a rede ainda usa HTTP. Não exponha a porta 8080 diretamente à internet; HTTPS entra antes do Password Vault.</p>
     </div>
     <div class="section studio-card">
+        <h3>OFFLINE / RESILIENCE CORE</h3>
+        <p>A PALMICORP mantém os módulos locais separados da internet, do MegaVault e das APIs externas. Se alguma camada cair, o painel entra em modo degradado em vez de cair junto.</p>
+        <div class="resilience-grid">
+            <div class="resilience-card"><div class="resilience-label">INTERNET</div><div class="resilience-value" id="resInternet">CHECKING</div><div class="resilience-note">A PALMICORP local continua sem internet.</div></div>
+            <div class="resilience-card"><div class="resilience-label">MEGAVAULT</div><div class="resilience-value" id="resMega">CHECKING</div><div class="resilience-note">Falha isolada: Notes, Art, ETEC, E-commerce e Calendar continuam.</div></div>
+            <div class="resilience-card"><div class="resilience-label">PALMICORP LOCAL API</div><div class="resilience-value" id="resLocalApi">CHECKING</div><div class="resilience-note">Se a API local falhar, a tela mantém um snapshot seguro do status do sistema.</div></div>
+            <div class="resilience-card"><div class="resilience-label">EXTERNAL API LAYER</div><div class="resilience-value good" id="resExternalApis">ISOLATED</div><div class="resilience-note">Serviços externos não controlam o funcionamento do painel local.</div></div>
+        </div>
+    </div>
+    <div class="section studio-card">
         <h3>PALMICORP VERSIONING</h3>
-        <div class="big" style="color:#65e8ff">v2.3.0-alpha</div>
-        <div class="small">ACCESS CORE // CINEMATIC LOCK // OFFLINE UI // CUSTOM GLYPHS // PERSONAL OS</div>
+        <div class="big" style="color:#65e8ff">v2.4.0-alpha</div>
+        <div class="small">RESILIENCE CORE // OFFLINE LOCAL MODE // STATUS SNAPSHOT // ACCESS CORE // PERSONAL OS</div>
     </div>
 </div>
 
@@ -2265,7 +2319,7 @@ body::after {
 
 PALMICORP TERMINAL SYSTEM
 <br>
-VERSION 2.3.0-alpha // ACCESS CORE
+VERSION 2.4.0-alpha // RESILIENCE CORE
 
 </footer>
 
@@ -2299,8 +2353,8 @@ function setConnectionState(online, text='') {
     badge.textContent = text || (online ? 'LOCAL LINK ONLINE' : 'LOCAL LINK OFFLINE');
 }
 
-window.addEventListener('online', () => setConnectionState(true));
-window.addEventListener('offline', () => setConnectionState(false, 'BROWSER NETWORK OFFLINE'));
+window.addEventListener('online', () => { setConnectionState(true); setupPalmicorpQr(); refreshSystem(); renderResilience(); });
+window.addEventListener('offline', () => { setConnectionState(true, 'LOCAL MODE // INTERNET OFFLINE'); setupPalmicorpQr(); renderResilience(); renderAlerts(); });
 
 function showLockScreen(mode='login', message='') {
     const screen = document.getElementById('lockScreen');
@@ -2423,6 +2477,7 @@ function startAuthenticatedSession() {
     refreshSystem();
     refreshPersonal();
     renderAlerts();
+    renderResilience();
     const security = document.getElementById('securityAuthState');
     if (security) security.textContent = 'AUTHENTICATED';
 }
@@ -2688,10 +2743,51 @@ function renderCalendar() {
 }
 
 let lastSystemStatus = null;
+let localApiReachable = true;
+let statusSnapshotActive = false;
+const SAFE_STATUS_CACHE_KEY = 'palmicorp_safe_status_v24';
+
+function setResilienceValue(id, value, mode='') {
+    const el=document.getElementById(id); if(!el) return;
+    el.textContent=value; el.className='resilience-value' + (mode ? ' ' + mode : '');
+}
+
+function saveSafeStatusSnapshot(data) {
+    try {
+        const safe = {battery:data.battery, ip:data.ip, uptime:data.uptime, megavault:data.megavault, internet:data.internet, devices:data.devices, saved_at:Date.now()};
+        localStorage.setItem(SAFE_STATUS_CACHE_KEY, JSON.stringify(safe));
+    } catch (_) {}
+}
+
+function loadSafeStatusSnapshot() {
+    try { const value=JSON.parse(localStorage.getItem(SAFE_STATUS_CACHE_KEY)||'null'); return value && typeof value==='object' ? value : null; } catch (_) { return null; }
+}
+
+function renderResilience() {
+    const internet=lastSystemStatus?.internet || (navigator.onLine ? 'UNKNOWN' : 'OFFLINE');
+    const mega=lastSystemStatus?.megavault || 'UNKNOWN';
+    setResilienceValue('resInternet', internet, internet==='ONLINE'?'good':internet==='OFFLINE'?'warn':'');
+    setResilienceValue('resMega', mega + (statusSnapshotActive?' · SNAPSHOT':''), mega==='ONLINE'?'good':mega==='OFFLINE'?'warn':'');
+    setResilienceValue('resLocalApi', localApiReachable ? 'ONLINE' : 'UNREACHABLE', localApiReachable?'good':'bad');
+    setResilienceValue('resExternalApis', internet==='OFFLINE' ? 'OPTIONAL / OFFLINE SAFE' : 'ISOLATED', internet==='OFFLINE'?'warn':'good');
+
+    const banner=document.getElementById('resilienceBanner'); if(!banner) return;
+    banner.classList.remove('show','danger');
+    if(!localApiReachable) {
+        banner.textContent='LOCAL API UNREACHABLE // SHOWING LAST SAFE SYSTEM SNAPSHOT'; banner.classList.add('show','danger');
+    } else if(internet==='OFFLINE' || !navigator.onLine) {
+        banner.textContent='INTERNET OFFLINE // LOCAL MODE ACTIVE — PALMICORP CONTINUES'; banner.classList.add('show');
+    } else if(mega==='OFFLINE') {
+        banner.textContent='MEGAVAULT OFFLINE // DEGRADED MODE — LOCAL MODULES CONTINUE'; banner.classList.add('show');
+    }
+}
+
 function renderAlerts() {
     const target=document.getElementById('alertList'); if(!target) return;
     const alerts=[]; const today=new Date().toISOString().slice(0,10);
-    if(lastSystemStatus?.megavault==='OFFLINE') alerts.push(['danger','MEGAVAULT OFFLINE','O serviço não respondeu à PALMICORP.']);
+    if(!localApiReachable) alerts.push(['danger','PALMICORP LOCAL API','A API local não respondeu. O painel está usando o último snapshot seguro de status.']);
+    if(lastSystemStatus?.internet==='OFFLINE' || !navigator.onLine) alerts.push(['warn','INTERNET OFFLINE','Modo local ativo. Os módulos locais continuam disponíveis.']);
+    if(lastSystemStatus?.megavault==='OFFLINE') alerts.push(['danger','MEGAVAULT OFFLINE','O serviço não respondeu; a PALMICORP continua em modo degradado.']);
     else if(lastSystemStatus?.megavault==='ONLINE') alerts.push(['ok','MEGAVAULT ONLINE','Serviço respondendo normalmente.']);
     if(Number(lastSystemStatus?.battery) <= 20) alerts.push(['warn','BATERIA BAIXA',`PALM-TERM-01 está em ${lastSystemStatus.battery}%.`]);
     const overdue=(personalState?.tasks||[]).filter(t=>!t.done&&t.due&&t.due<today).length;
@@ -2827,21 +2923,23 @@ function updateBrasiliaClock() {
 
 
 function setupPalmicorpQr() {
-
-    const url =
-        window.location.protocol +
-        "//" +
-        window.location.hostname +
-        ":8080";
-
+    const url = window.location.protocol + "//" + window.location.hostname + ":8080";
     document.getElementById("palmicorpQrUrl").textContent = url;
-
-    document.getElementById("palmicorpQr").src =
-        "https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=" +
-        encodeURIComponent(url);
-
+    const image=document.getElementById("palmicorpQr");
+    image.alt='QR de acesso PALMICORP';
+    image.onerror=()=>{
+        image.removeAttribute('src');
+        image.alt='QR indisponível sem internet — use o endereço mostrado ao lado';
+        image.style.background='#eef4f7';
+    };
+    if(navigator.onLine) {
+        image.src='https://api.qrserver.com/v1/create-qr-code/?size=300x300&data='+encodeURIComponent(url);
+    } else {
+        image.removeAttribute('src');
+        image.alt='Modo offline — use o endereço mostrado ao lado';
+        image.style.background='#eef4f7';
+    }
 }
-
 
 function updateClock() {
 
@@ -2896,120 +2994,53 @@ function setStatus(element, status) {
 }
 
 
-async function refreshSystem() {
-
-    try {
-
-        const response =
-            await fetch(
-                "/api/status?t=" +
-                Date.now()
-            );
-
-        const data =
-            await response.json();
-        lastSystemStatus = data;
-        setConnectionState(true);
-
-
-        document.getElementById(
-            "battery"
-        ).textContent =
-            data.battery === null
-            ? "UNKNOWN"
-            : data.battery + "%";
-
-
-        document.getElementById(
-            "ip"
-        ).textContent =
-            data.ip;
-
-
-        document.getElementById(
-            "uptime"
-        ).textContent =
-            data.uptime;
-
-
-        setStatus(
-            document.getElementById(
-                "term01"
-            ),
-            data.devices["PALM-TERM-01"]
-        );
-
-
-        setStatus(
-            document.getElementById(
-                "term02"
-            ),
-            data.devices["PALM-TERM-02"]
-        );
-
-
-        setStatus(
-            document.getElementById(
-                "pc01"
-            ),
-            data.devices["PALM-PC-01"]
-        );
-
-
-        const mega =
-            document.getElementById(
-                "megavault"
-            );
-
-
-        mega.textContent =
-            data.megavault;
-
-
-        mega.className = "big";
-
-
-        if(data.megavault === "ONLINE") {
-
-            mega.classList.add(
-                "mega-online"
-            );
-
-        }
-
-        else if(
-            data.megavault === "OFFLINE"
-        ) {
-
-            mega.classList.add(
-                "mega-offline"
-            );
-
-        }
-
-        else {
-
-            mega.classList.add(
-                "mega-config"
-            );
-
-        }
-        renderAlerts();
-
+function applySystemStatus(data, snapshot=false) {
+    if(!data) return;
+    document.getElementById('battery').textContent = data.battery === null || data.battery === undefined ? 'UNKNOWN' : data.battery + '%';
+    document.getElementById('ip').innerHTML = escapeHtml(data.ip || 'UNKNOWN') + (snapshot ? '<span class="snapshot-badge">SNAPSHOT</span>' : '');
+    document.getElementById('uptime').textContent = data.uptime || '--:--:--';
+    if(data.devices) {
+        setStatus(document.getElementById('term01'), data.devices['PALM-TERM-01'] || 'UNKNOWN');
+        setStatus(document.getElementById('term02'), data.devices['PALM-TERM-02'] || 'UNKNOWN');
+        setStatus(document.getElementById('pc01'), data.devices['PALM-PC-01'] || 'UNKNOWN');
     }
-
-    catch(error) {
-
-        console.log(
-            "Palmicorp API error",
-            error
-        );
-        setConnectionState(false, "PALMICORP SERVER UNREACHABLE");
-
-    }
-
+    const mega=document.getElementById('megavault');
+    mega.textContent=(data.megavault || 'UNKNOWN') + (snapshot ? ' · SNAPSHOT' : '');
+    mega.className='big';
+    if(data.megavault==='ONLINE') mega.classList.add('mega-online');
+    else if(data.megavault==='OFFLINE') mega.classList.add('mega-offline');
+    else mega.classList.add('mega-config');
 }
 
+async function refreshSystem() {
+    try {
+        const response=await fetch('/api/status?t='+Date.now(), {cache:'no-store'});
+        if(!response.ok) throw new Error('STATUS API ' + response.status);
+        const data=await response.json();
+        lastSystemStatus=data;
+        localApiReachable=true;
+        statusSnapshotActive=false;
+        saveSafeStatusSnapshot(data);
+        applySystemStatus(data,false);
+        setConnectionState(true, data.internet==='OFFLINE' ? 'LOCAL MODE // INTERNET OFFLINE' : 'LOCAL LINK ONLINE');
+        renderResilience();
+        renderAlerts();
+    } catch(error) {
+        console.log('Palmicorp API error', error);
+        localApiReachable=false;
+        const snapshot=loadSafeStatusSnapshot();
+        if(snapshot) {
+            lastSystemStatus=snapshot;
+            statusSnapshotActive=true;
+            applySystemStatus(snapshot,true);
+            setConnectionState(false,'LOCAL API OFFLINE // SNAPSHOT');
+        } else {
+            setConnectionState(false,'PALMICORP LOCAL API UNREACHABLE');
+        }
+        renderResilience();
+        renderAlerts();
+    }
+}
 
 function bootSequence() {
 
@@ -3265,6 +3296,8 @@ class Handler(BaseHTTPRequestHandler):
                 "ip": get_local_ip(),
 
                 "uptime": get_uptime(),
+
+                "internet": internet_status(),
 
                 "megavault":
                     megavault_status(),
@@ -3663,7 +3696,7 @@ print(
 print()
 
 print(
-    "PALMICORP TERMINAL v2.3.0-alpha"
+    "PALMICORP TERMINAL v2.4.0-alpha"
 )
 
 print("=" * 42)
