@@ -10,6 +10,7 @@ from pathlib import Path
 import re
 import secrets
 import socket
+import ssl
 import struct
 import time
 import urllib.parse
@@ -49,6 +50,9 @@ ART_BOOKS_DIR = DATA_DIR / "art" / "books"
 ART_DRAWINGS_DIR = DATA_DIR / "art" / "drawings"
 AUTH_DIR = Path.home() / ".palmicorp"
 AUTH_FILE = AUTH_DIR / "auth.json"
+TLS_DIR = AUTH_DIR / "tls"
+TLS_CERT_FILE = TLS_DIR / "palmicorp-server.crt"
+TLS_KEY_FILE = TLS_DIR / "palmicorp-server.key"
 AUTH_DIR.mkdir(parents=True, exist_ok=True)
 AUTH_ITERATIONS = 220_000
 SESSION_TTL_SECONDS = 8 * 60 * 60
@@ -341,7 +345,7 @@ def vault_status(session_token):
         "configured": configured,
         "unlocked": bool(configured and key),
         "unlock_ttl_seconds": VAULT_TTL_SECONDS,
-        "transport_secure": False,
+        "transport_secure": True,
         "cipher": "AES-256-GCM" if CRYPTO_AVAILABLE else "UNAVAILABLE",
         "password_count": 0,
         "file_count": 0,
@@ -1703,7 +1707,7 @@ footer {
 
 
 /* =========================================================
-   PALMICORP v2.5 // ENCRYPTED VAULT CORE
+   PALMICORP v2.6 // HTTPS TRANSPORT CORE
    ========================================================= */
 
 .vault-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(190px,1fr)); gap:10px; margin-top:14px; }
@@ -2492,7 +2496,7 @@ body::after {
     </div>
 
     <div class="vault-warning">
-        STORAGE AT REST: criptografado com AES-256-GCM. TRANSPORTE ATUAL: HTTP na rede local. Até ativarmos HTTPS, use somente em Wi-Fi confiável e não exponha a porta 8080 à internet.
+        STORAGE AT REST: criptografado com AES-256-GCM. TRANSPORTE ATUAL: HTTPS/TLS na rede local. O certificado é emitido pela PALMICORP Local CA; mantenha a porta 8080 restrita à sua rede local.
     </div>
 
     <div id="vaultUnavailable" class="vault-gate vault-hidden">
@@ -2649,9 +2653,9 @@ body::after {
             <div class="security-card"><div class="security-label">AUTH STATUS</div><div id="securityAuthState" class="security-value good">AUTHENTICATED</div></div>
             <div class="security-card"><div class="security-label">AUTO LOCK</div><div class="security-value">30 MIN IDLE</div></div>
             <div class="security-card"><div class="security-label">SERVER SESSION</div><div class="security-value">8 HOURS MAX</div></div>
-            <div class="security-card"><div class="security-label">TRANSPORT</div><div class="security-value warn">LOCAL HTTP</div></div>
+            <div class="security-card"><div class="security-label">TRANSPORT</div><div class="security-value ok">LOCAL HTTPS</div></div>
         </div>
-        <p style="margin-top:12px">A autenticação protege os dados do painel, mas a rede ainda usa HTTP. Não exponha a porta 8080 diretamente à internet; HTTPS entra antes do Password Vault.</p>
+        <p style="margin-top:12px">A autenticação protege os dados do painel e o transporte local agora usa HTTPS/TLS. Não exponha a porta 8080 diretamente à internet.</p>
     </div>
     <div class="section studio-card">
         <h3>OFFLINE / RESILIENCE CORE</h3>
@@ -2665,7 +2669,7 @@ body::after {
     </div>
     <div class="section studio-card">
         <h3>PALMICORP VERSIONING</h3>
-        <div class="big" style="color:#65e8ff">v2.5.0-alpha</div>
+        <div class="big" style="color:#65e8ff">v2.6.0-alpha</div>
         <div class="small">RESILIENCE CORE // OFFLINE LOCAL MODE // STATUS SNAPSHOT // ACCESS CORE // PERSONAL OS</div>
     </div>
 </div>
@@ -2687,7 +2691,7 @@ body::after {
 
 PALMICORP TERMINAL SYSTEM
 <br>
-VERSION 2.5.0-alpha // ENCRYPTED VAULT CORE
+VERSION 2.6.0-alpha // HTTPS TRANSPORT CORE
 
 </footer>
 
@@ -3758,11 +3762,11 @@ class Handler(BaseHTTPRequestHandler):
     def session_cookie(self, token):
         return (
             f"palm_session={token}; Path=/; Max-Age={SESSION_TTL_SECONDS}; "
-            "HttpOnly; SameSite=Strict"
+            "HttpOnly; SameSite=Strict; Secure"
         )
 
     def clear_session_cookie(self):
-        return "palm_session=; Path=/; Max-Age=0; HttpOnly; SameSite=Strict"
+        return "palm_session=; Path=/; Max-Age=0; HttpOnly; SameSite=Strict; Secure"
 
     def read_json_body(self, max_bytes=64 * 1024):
         length = int(self.headers.get("Content-Length", 0))
@@ -4420,6 +4424,19 @@ server = ThreadingHTTPServer(
     Handler
 )
 
+if not TLS_CERT_FILE.exists() or not TLS_KEY_FILE.exists():
+    missing = []
+    if not TLS_CERT_FILE.exists():
+        missing.append(str(TLS_CERT_FILE))
+    if not TLS_KEY_FILE.exists():
+        missing.append(str(TLS_KEY_FILE))
+    raise FileNotFoundError("TLS certificate/key missing: " + ", ".join(missing))
+
+tls_context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+tls_context.minimum_version = ssl.TLSVersion.TLSv1_2
+tls_context.load_cert_chain(certfile=str(TLS_CERT_FILE), keyfile=str(TLS_KEY_FILE))
+server.socket = tls_context.wrap_socket(server.socket, server_side=True)
+
 
 print()
 print("=" * 42)
@@ -4452,10 +4469,15 @@ print(
     PORT
 )
 
+print(
+    "HTTPS   :",
+    f"https://{get_local_ip()}:{PORT}"
+)
+
 print()
 
 print(
-    "PALMICORP TERMINAL v2.5.0-alpha"
+    "PALMICORP TERMINAL v2.6.0-alpha"
 )
 
 print("=" * 42)
